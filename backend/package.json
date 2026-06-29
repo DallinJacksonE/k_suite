@@ -7,16 +7,22 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test tests/**/*.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^5.2.1"
+    "@k_suite/shared": "file:../shared",
+    "express": "^5.2.1",
+    "mariadb": "^3.5.3",
+    "minio": "^8.0.7",
+    "multer": "^2.2.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
     "@types/node": "^26.0.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"

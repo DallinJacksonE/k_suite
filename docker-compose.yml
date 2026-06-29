@@ -12,7 +12,8 @@ services:
       MARIADB_USER: k_suite
       MARIADB_PASSWORD: k_suite_password
       MINIO_ENDPOINT: http://bucket:9000
-      MINIO_BUCKET: k-suite
+      MINIO_PUBLIC_BUCKET: public-assets
+      MINIO_PRIVATE_BUCKET: private-patterns
       MINIO_ACCESS_KEY: k_suite_minio
       MINIO_SECRET_KEY: k_suite_minio_password
     ports:
@@ -98,7 +99,8 @@ services:
     environment:
       MINIO_ROOT_USER: k_suite_minio
       MINIO_ROOT_PASSWORD: k_suite_minio_password
-      MINIO_BUCKET: k-suite
+      MINIO_PUBLIC_BUCKET: public-assets
+      MINIO_PRIVATE_BUCKET: private-patterns
     ports:
       - "9000:9000"
       - "9001:9001"

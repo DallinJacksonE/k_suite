@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     /* Crucial: Generates the .d.ts files for your frontend to consume */
     "declaration": true,
+    "rootDir": "./src",
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,

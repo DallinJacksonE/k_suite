@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-: "${MINIO_BUCKET:=k-suite}"
+: "${MINIO_PUBLIC_BUCKET:=public-assets}"
+: "${MINIO_PRIVATE_BUCKET:=private-patterns}"
 : "${MINIO_ROOT_USER:=minioadmin}"
 : "${MINIO_ROOT_PASSWORD:=minioadmin}"
 
@@ -18,6 +19,8 @@ until /usr/bin/mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MIN
   sleep 1
 done
 
-/usr/bin/mc mb --ignore-existing "local/${MINIO_BUCKET}"
+/usr/bin/mc mb --ignore-existing "local/${MINIO_PUBLIC_BUCKET}"
+/usr/bin/mc mb --ignore-existing "local/${MINIO_PRIVATE_BUCKET}"
+/usr/bin/mc anonymous set download "local/${MINIO_PUBLIC_BUCKET}"
 
 wait "$minio_pid"
