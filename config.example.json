@@ -1,0 +1,13 @@
+{
+  "mariadb": {
+    "database": "k_suite",
+    "user": "k_suite",
+    "password": "replace-with-a-strong-database-password",
+    "rootPassword": "replace-with-a-strong-root-password"
+  },
+  "bucket": {
+    "bucketName": "k-suite",
+    "accessKey": "replace-with-a-minio-access-key",
+    "secretKey": "replace-with-a-strong-minio-secret-key"
+  }
+}

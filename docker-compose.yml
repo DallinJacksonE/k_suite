@@ -1,0 +1,117 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MARIADB_HOST: mariadb
+      MARIADB_PORT: 3306
+      MARIADB_DATABASE: k_suite
+      MARIADB_USER: k_suite
+      MARIADB_PASSWORD: k_suite_password
+      MINIO_ENDPOINT: http://bucket:9000
+      MINIO_BUCKET: k-suite
+      MINIO_ACCESS_KEY: k_suite_minio
+      MINIO_SECRET_KEY: k_suite_minio_password
+    ports:
+      - "5000:5000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      bucket:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    environment:
+      NODE_ENV: production
+      PORT: 4999
+      BACKEND_URL: http://backend:5000
+    ports:
+      - "5001:4999"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4999/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    environment:
+      NODE_ENV: production
+      PORT: 4999
+      BACKEND_URL: http://backend:5000
+    ports:
+      - "5002:4999"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4999/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  mariadb:
+    build:
+      context: .
+      dockerfile: Dockerfile.mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: root_password
+      MARIADB_DATABASE: k_suite
+      MARIADB_USER: k_suite
+      MARIADB_PASSWORD: k_suite_password
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  bucket:
+    build:
+      context: .
+      dockerfile: Dockerfile.bucket
+    environment:
+      MINIO_ROOT_USER: k_suite_minio
+      MINIO_ROOT_PASSWORD: k_suite_minio_password
+      MINIO_BUCKET: k-suite
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/bin/mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mariadb_data:
+  minio_data:
