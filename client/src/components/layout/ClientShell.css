@@ -1,0 +1,171 @@
+.client-shell {
+  min-height: 100svh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, var(--hero-glow), transparent 34rem),
+    linear-gradient(135deg, rgba(241, 250, 238, 0.96), rgba(255, 255, 255, 0.88));
+}
+
+.client-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+.client-shell__brand {
+  color: var(--text-h);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.client-shell__menu-button {
+  display: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text-h);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.client-shell__nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.client-shell__nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text-h);
+  text-decoration: none;
+  background: var(--panel);
+}
+
+.client-shell__nav a.active {
+  color: var(--button-text);
+  background: var(--accent);
+}
+
+.client-shell__main {
+  display: grid;
+  gap: 24px;
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+}
+
+.page-card,
+.status-card {
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.page-card {
+  display: grid;
+  gap: 16px;
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.page-card h1,
+.page-card h2,
+.status-card h2 {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.page-card p,
+.status-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.route-grid,
+.featured-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.route-grid article,
+.featured-card {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 20px;
+  background: rgba(var(--panel-rgb), 0.72);
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+}
+
+.status-card button,
+.cta-link {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  color: var(--button-text);
+  background: var(--accent);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.status-card button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 800px) {
+  .client-shell__header,
+  .status-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .client-shell__menu-button {
+    display: inline-flex;
+  }
+
+  .client-shell__nav {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .client-shell__nav--open {
+    display: flex;
+  }
+
+  .client-shell__nav a {
+    text-align: center;
+  }
+
+  .route-grid,
+  .featured-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,7 +3,10 @@ import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID, scrypt as
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { SESSION_TTL_MS } from '@k_suite/shared';
 import { createMariaDbService } from './mariadb_service.js';
+import { NoopEmailService } from '../email/EmailService.js';
+import { createOrderEmailMessage } from '../email/OrderEmailTemplates.js';
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const defaultService = createMariaDbService();
@@ -12,11 +15,13 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         checkUserPassword: (email, password) => checkUserPassword(email, password, service),
         loginUser: (input) => loginUser(input, service, runtime),
         addUser: (userData) => addUser(userData, service, runtime),
+        getSession: (cookies) => getSession(cookies, service, runtime),
+        logoutUser: (clientCookie) => logoutUser(clientCookie, service),
         getUser: (email, cookie) => getUser(email, cookie, service),
         updateUser: (userData, email, cookie) => updateUser(userData, email, cookie, service),
         deleteUser: (email, cookie) => deleteUser(email, cookie, service),
         getOrders: (adminCookie) => getOrders(adminCookie, service),
-        updateOrderStatus: (adminCookie, orderId, status) => updateOrderStatus(adminCookie, orderId, status, service),
+        updateOrderStatus: (adminCookie, orderId, status) => updateOrderStatus(adminCookie, orderId, status, service, runtime),
         getServiceHealth: (adminCookie) => getServiceHealth(adminCookie, service),
         newCookie: (email, cookie, kind) => newCookie(email, cookie, kind, service, runtime),
         checkedout: (email, cookie, paidAmount) => checkedout(email, cookie, paidAmount, service, runtime),
@@ -29,9 +34,13 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         createBlogArticle: (adminCookie, input) => createBlogArticle(adminCookie, input, service, runtime),
         updateBlogArticle: (adminCookie, articleId, input) => updateBlogArticle(adminCookie, articleId, input, service),
         deleteBlogArticle: (adminCookie, articleId) => deleteBlogArticle(adminCookie, articleId, service),
-        listShopProducts: (productType, batchSize, afterId) => listShopProducts(productType, batchSize, afterId, service),
+        listShopProducts: (request) => listShopProducts(request, service),
+        getCart: (cookies) => getCart(cookies, service, runtime),
         addCartItem: (input, cookies) => addCartItem(input, cookies, service, runtime),
+        updateCartItem: (itemId, input, cookies) => updateCartItem(itemId, input, cookies, service, runtime),
         removeCartItem: (productId, cookies) => removeCartItem(productId, cookies, service, runtime),
+        estimateCheckout: (input, cookies) => estimateCheckout(input, cookies, service, runtime),
+        checkout: (input, cookies) => checkout(input, cookies, service, runtime),
     };
 }
 export async function initializeMariaDbAccess(service = defaultService) {
@@ -77,6 +86,30 @@ export async function addUser(userData, service = defaultService, runtime = {}) 
         await service.deleteGuest(userData.guestCookie);
     return { user: toPublicUser(user), cookie: await createAndStoreCookie(email, 'client', service, runtime) };
 }
+export async function getSession(cookies, service = defaultService, runtime = {}) {
+    if (cookies.clientCookie) {
+        const cookieRecord = await service.findCookie(cookies.clientCookie);
+        if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) {
+            const user = await service.findUserByEmail(cookieRecord.email);
+            if (user) {
+                await service.touchCookie(cookies.clientCookie, expiresAt(runtime));
+                return { status: 'authenticated', user: toPublicUser(user) };
+            }
+        }
+    }
+    if (cookies.sessionCookie) {
+        const guest = await service.findGuestByCookie(cookies.sessionCookie);
+        if (guest && isExpired(guest.expiresAt, now(runtime)))
+            await service.deleteGuest(cookies.sessionCookie);
+        else if (guest)
+            await service.touchGuest(cookies.sessionCookie, expiresAt(runtime));
+    }
+    return { status: 'guest' };
+}
+export async function logoutUser(clientCookie, service = defaultService) {
+    if (clientCookie)
+        await service.deleteCookie(clientCookie);
+}
 export async function getUser(email, cookie, service = defaultService) {
     const user = await requireUserWithCookie(email, cookie, service, 'client');
     return { user: toPublicUser(user), orders: await service.listOrdersForUser(user.email) };
@@ -102,7 +135,7 @@ export async function deleteUser(email, cookie, service = defaultService) {
     await service.deleteUser(user.email);
 }
 export async function getOrders(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listOrders(); }
-export async function updateOrderStatus(adminCookie, orderId, status, service = defaultService) { await requireAdminCookie(adminCookie, service); assertValidOrderStatus(status); return service.updateOrderStatus(orderId, status); }
+export async function updateOrderStatus(adminCookie, orderId, status, service = defaultService, runtime = {}) { await requireAdminCookie(adminCookie, service); assertValidOrderStatus(status); const order = await service.updateOrderStatus(orderId, status); await sendOrderStatusEmail(order, runtime); return order; }
 export async function getServiceHealth(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); const checks = [{ name: 'database', status: 'ok' }, { name: 'objectStorage', status: 'ok' }]; return { status: checks.every((check) => check.status === 'ok') ? 'ok' : 'degraded', checkedAt: new Date().toISOString(), services: checks }; }
 export async function newCookie(email, oldCookie, kind = 'client', service = defaultService, runtime = {}) {
     const normalizedEmail = normalizeEmail(email);
@@ -148,39 +181,146 @@ export async function createBlogArticle(adminCookie, input, service = defaultSer
 export async function updateBlogArticle(adminCookie, articleId, input, service = defaultService) { await requireAdminCookie(adminCookie, service); if (input.blocks)
     validateBlogBlocks(input.blocks); return service.updateBlogArticle(articleId, input); }
 export async function deleteBlogArticle(adminCookie, articleId, service = defaultService) { await requireAdminCookie(adminCookie, service); await service.deleteBlogArticle(articleId); }
-export async function listShopProducts(productType, batchSize = 20, afterId, service = defaultService) {
-    const products = await service.listProducts(productType, false);
-    const startIndex = afterId ? products.findIndex((product) => product.id === afterId) + 1 : 0;
-    return products.slice(Math.max(0, startIndex), Math.max(0, startIndex) + batchSize);
+export async function listShopProducts(request, service = defaultService) {
+    const filters = request.filters ?? {};
+    const productType = filters.type === 'all' ? undefined : filters.type;
+    const batchSize = request.batchSize ?? 20;
+    const sorted = applyProductSort(await service.listProducts(productType, false), request.sort ?? 'createdAt', request.direction ?? 'desc');
+    const filtered = sorted.filter((product) => matchesProductFilters(product, filters));
+    const startIndex = request.afterId ? filtered.findIndex((product) => product.id === request.afterId) + 1 : 0;
+    const safeStart = Math.max(0, startIndex);
+    const products = filtered.slice(safeStart, safeStart + batchSize);
+    const nextCursor = products.at(-1)?.id;
+    return { products, nextCursor, hasMore: safeStart + batchSize < filtered.length, appliedFilters: filters };
+}
+export async function getCart(cookies, service = defaultService, runtime = {}) {
+    const target = await getCartTarget(cookies, service, runtime);
+    const cart = normalizeCart(target.cart);
+    await target.save(cart);
+    return await toCartSnapshot(cart, target.cookieName === 'client_cookie', service);
 }
 export async function addCartItem(input, cookies, service = defaultService, runtime = {}) {
     const item = normalizeCartItem(input);
-    if (!await service.findProductById(item.productId))
+    const product = await service.findProductById(item.productId);
+    if (!product)
         throw new Error(`Product not found: ${item.productId}`);
+    if (product.inventoryCount !== undefined && product.inventoryCount < item.quantity)
+        throw new Error('Product is out of stock.');
+    if (product.type === 'pattern' && !cookies.clientCookie)
+        throw new Error('Login required to purchase patterns.');
     const target = await getCartTarget(cookies, service, runtime);
     const cart = mergeCartItem(target.cart, item);
     await target.save(cart);
     return { cookie: target.cookie, cookieName: target.cookieName, cart };
 }
+export async function updateCartItem(itemId, input, cookies, service = defaultService, runtime = {}) {
+    const target = await getCartTarget(cookies, service, runtime);
+    const cart = normalizeCart(target.cart).map((item) => itemIdForCartItem(item) === itemId ? normalizeCartItem({ ...item, ...input }) : item);
+    await target.save(cart);
+    return await toCartSnapshot(cart, target.cookieName === 'client_cookie', service);
+}
 export async function removeCartItem(productId, cookies, service = defaultService, runtime = {}) {
     const target = await getCartTarget(cookies, service, runtime);
-    const cart = normalizeCart(target.cart).filter((item) => item.productId !== productId);
+    const cart = normalizeCart(target.cart).filter((item) => item.productId !== productId && itemIdForCartItem(item) !== productId);
     await target.save(cart);
     return { cookie: target.cookie, cookieName: target.cookieName, cart };
 }
+export async function estimateCheckout(input, cookies, service = defaultService, runtime = {}) {
+    assertRequired(input.shippingAddress?.country ?? '', 'shippingAddress.country');
+    const snapshot = await getCart(cookies, service, runtime);
+    if (!snapshot.items.length)
+        throw new Error('Cart is empty.');
+    if (!snapshot.guestCheckoutAllowed)
+        throw new Error('Please log in to check out with patterns.');
+    const shipping = snapshot.subtotal >= 8_000 ? 0 : 800;
+    const tax = Math.round(snapshot.subtotal * taxRateFor(input.shippingAddress.state));
+    return { subtotal: snapshot.subtotal, shipping, tax, discount: 0, grandTotal: snapshot.subtotal + shipping + tax, currency: 'USD' };
+}
+export async function checkout(input, cookies, service = defaultService, runtime = {}) {
+    assertRequired(input.idempotencyKey, 'idempotencyKey');
+    assertRequired(input.contact?.email ?? '', 'contact.email');
+    assertRequired(input.contact?.name ?? '', 'contact.name');
+    assertRequired(input.shippingAddress?.country ?? '', 'shippingAddress.country');
+    assertRequired(input.billingAddress?.country ?? '', 'billingAddress.country');
+    const existing = await service.findOrderByIdempotencyKey(input.idempotencyKey);
+    if (existing)
+        return toCheckoutResult(existing);
+    const target = await getCartTarget(cookies, service, runtime);
+    const cart = normalizeCart(target.cart);
+    if (!cart.length)
+        throw new Error('Cart is empty.');
+    const lineItems = await Promise.all(cart.map((item) => toOrderLineItem(item, service)));
+    const containsPatterns = lineItems.some((item) => item.productType === 'pattern');
+    if (containsPatterns && target.cookieName !== 'client_cookie')
+        throw new Error('Please log in to check out with patterns.');
+    const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    const shipping = subtotal >= 8_000 ? 0 : 800;
+    const tax = Math.round(subtotal * taxRateFor(input.shippingAddress.region));
+    const totals = { subtotal, discountTotal: 0, shipping, tax, grandTotal: subtotal + shipping + tax };
+    const order = await service.insertOrder({
+        orderId: createUuid(runtime),
+        idempotencyKey: input.idempotencyKey,
+        productId: lineItems[0].productId,
+        clientEmail: normalizeEmail(input.contact.email),
+        details: {
+            contact: { ...input.contact, email: normalizeEmail(input.contact.email) },
+            shippingAddress: input.shippingAddress,
+            billingAddress: input.billingAddress,
+            payment: { token: input.paymentToken, status: input.paymentStatus ?? 'pending' },
+            totals,
+            lineItems,
+        },
+        clientInstructions: lineItems.map((item) => item.clientInstructions).filter(Boolean).join('\n'),
+        chargedAmount: totals.grandTotal,
+        status: 'pending',
+    });
+    await target.save([]);
+    await sendOrderEmail('order_created', order, runtime);
+    return toCheckoutResult(order);
+}
+function matchesProductFilters(product, filters = {}) {
+    if (filters.saleOnly && !product.isSaleItem)
+        return false;
+    if (filters.size && !(product.sizes ?? []).includes(filters.size))
+        return false;
+    if (filters.color && (product.type !== 'plushie' || !product.colorVariations.some((variation) => readColorName(variation).toLowerCase() === filters.color?.toLowerCase())))
+        return false;
+    if (filters.tags?.length && !filters.tags.every((tag) => product.tags?.includes(tag)))
+        return false;
+    return true;
+}
+function applyProductSort(products, sort, direction) {
+    const multiplier = direction === 'asc' ? 1 : -1;
+    return [...products].sort((left, right) => {
+        const value = compareSortValue(left, right, sort);
+        return value === 0 ? left.id.localeCompare(right.id) : value * multiplier;
+    });
+}
+function compareSortValue(left, right, sort) {
+    if (sort === 'price')
+        return effectivePrice(left) - effectivePrice(right);
+    if (sort === 'title')
+        return left.title.localeCompare(right.title);
+    return timestamp(left.createdAt) - timestamp(right.createdAt);
+}
+function effectivePrice(product) { return product.salePrice ?? product.price; }
+function readColorName(variation) { return typeof variation === 'string' ? variation : String(variation.name ?? ''); }
+function timestamp(value) { return value ? new Date(value).getTime() : 0; }
 async function requireUserWithCookie(email, cookie, service, kind) {
     const normalizedEmail = normalizeEmail(email);
     const [user, cookieRecord] = await Promise.all([service.findUserByEmail(normalizedEmail), service.findCookie(cookie)]);
-    if (!user || !cookieRecord || cookieRecord.email !== normalizedEmail || cookieRecord.kind !== kind)
+    if (!user || !cookieRecord || cookieRecord.email !== normalizedEmail || cookieRecord.kind !== kind || isExpired(cookieRecord.expiresAt, now()))
         throw new Error('Invalid or expired cookie.');
+    await service.touchCookie(cookie, expiresAt());
     return user;
 }
 export async function requireAdminCookie(cookie, service = defaultService) {
     const cookieRecord = await service.findCookie(cookie);
-    if (!cookieRecord || cookieRecord.kind !== 'admin' || !(await service.findAdminByEmail(cookieRecord.email)))
+    if (!cookieRecord || cookieRecord.kind !== 'admin' || isExpired(cookieRecord.expiresAt, now()) || !(await service.findAdminByEmail(cookieRecord.email)))
         throw new Error('Admin access required.');
+    await service.touchCookie(cookie, expiresAt());
 }
-async function createAndStoreCookie(email, kind, service, runtime) { const cookie = createCookie(runtime); await service.upsertCookie(email, cookie, kind); return cookie; }
+async function createAndStoreCookie(email, kind, service, runtime) { const cookie = createCookie(runtime); await service.upsertCookie(email, cookie, kind, expiresAt(runtime)); return cookie; }
 async function hashPassword(password, salt) { return (await scryptAsync(password, salt, PASSWORD_KEY_LENGTH)).toString('hex'); }
 async function verifyPassword(password, salt, expectedHash) { const actual = Buffer.from(await hashPassword(password, salt), 'hex'); const expected = Buffer.from(expectedHash, 'hex'); return actual.length === expected.length && timingSafeEqual(actual, expected); }
 function toPublicUser(user) { return { email: user.email, name: user.name, cart: user.cart, pdfKeys: user.pdfKeys }; }
@@ -195,21 +335,37 @@ function normalizeCart(cart) { return cart.map((item) => normalizeCartItem(item)
 function normalizeCartItem(item) { if (!item || typeof item !== 'object')
     throw new Error('Invalid cart item.'); const record = item; const productId = String(record.productId ?? record.product_id ?? ''); if (!productId)
     throw new Error('Invalid cart item: productId is required.'); const quantity = Number(record.quantity ?? 1); if (!Number.isFinite(quantity) || quantity <= 0)
-    throw new Error('Invalid cart item: quantity must be positive.'); return { productId, quantity, clientInstructions: String(record.clientInstructions ?? record.client_instructions ?? ''), colorVariation: record.colorVariation === undefined ? undefined : String(record.colorVariation) }; }
-function mergeCartItem(cart, item) { const normalized = normalizeCart(cart); const existing = normalized.find((cartItem) => cartItem.productId === item.productId && cartItem.colorVariation === item.colorVariation); if (existing)
+    throw new Error('Invalid cart item: quantity must be positive.'); const colorVariation = record.colorVariation ?? record.selectedColor; const selectedSize = record.selectedSize; return { productId, quantity, clientInstructions: String(record.clientInstructions ?? record.client_instructions ?? ''), colorVariation: colorVariation === undefined ? undefined : String(colorVariation), selectedColor: colorVariation === undefined ? undefined : String(colorVariation), selectedSize: isProductSize(selectedSize) ? selectedSize : undefined }; }
+function mergeCartItem(cart, item) { const normalized = normalizeCart(cart); const existing = normalized.find((cartItem) => itemIdForCartItem(cartItem) === itemIdForCartItem(item)); if (existing)
     existing.quantity += item.quantity;
 else
     normalized.push(item); return normalized; }
+async function toCartSnapshot(cart, authenticated, service) { const items = await Promise.all(cart.map((item) => toCartLineItem(item, service))); const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0); const containsPatterns = items.some((item) => item.productType === 'pattern'); return { items, subtotal, containsPatterns, guestCheckoutAllowed: authenticated || !containsPatterns }; }
+async function toCartLineItem(item, service) { const product = await service.findProductById(item.productId); if (!product)
+    throw new Error(`Product not found: ${item.productId}`); const unitPrice = effectivePrice(product); return { itemId: itemIdForCartItem(item), productId: item.productId, productType: product.type, title: product.title, thumbnailImage: product.thumbnailImage, quantity: item.quantity, unitPrice, regularUnitPrice: product.price, salePrice: product.salePrice, lineTotal: unitPrice * item.quantity, selectedColor: item.selectedColor ?? item.colorVariation, selectedSize: item.selectedSize, clientInstructions: item.clientInstructions }; }
+async function toOrderLineItem(item, service) { const product = await service.findProductById(item.productId); if (!product || !product.available)
+    throw new Error(`Product not found: ${item.productId}`); if (product.inventoryCount !== undefined && product.inventoryCount < item.quantity)
+    throw new Error('Product is out of stock.'); const unitPrice = effectivePrice(product); return { productId: item.productId, productType: product.type, title: product.title, quantity: item.quantity, unitPrice, salePrice: product.salePrice, selectedColor: item.selectedColor ?? item.colorVariation, selectedSize: item.selectedSize, clientInstructions: item.clientInstructions, lineTotal: unitPrice * item.quantity, pdfKey: product.type === 'pattern' ? product.pdfKey : undefined }; }
+function itemIdForCartItem(item) { return [item.productId, item.colorVariation ?? item.selectedColor ?? '', item.selectedSize ?? ''].join(':'); }
+function isProductSize(value) { return typeof value === 'string' && ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
+function taxRateFor(state) { return state?.toUpperCase() === 'CA' ? 0.0825 : 0; }
 async function getCartTarget(cookies, service, runtime) { if (cookies.clientCookie) {
     const cookieRecord = await service.findCookie(cookies.clientCookie);
-    if (cookieRecord?.kind === 'client') {
+    if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) {
         const user = await service.findUserByEmail(cookieRecord.email);
         if (user)
-            return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, save: async (cart) => { await service.updateUser(user.email, { cart }); } };
+            return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, save: async (cart) => { await service.updateUser(user.email, { cart }); await service.touchCookie(cookies.clientCookie, expiresAt(runtime)); } };
     }
-} const sessionCookie = cookies.sessionCookie ?? createCookie(runtime); const guest = await service.findGuestByCookie(sessionCookie); return { cookie: sessionCookie, cookieName: 'session_cookie', cart: guest?.cart ?? [], save: async (cart) => { await service.upsertGuestCart(sessionCookie, cart); } }; }
-function assertValidOrderStatus(status) { if (!['pending', 'paid', 'fulfilled', 'cancelled'].includes(status))
+} const sessionCookie = cookies.sessionCookie ?? createCookie(runtime); const guest = await service.findGuestByCookie(sessionCookie); if (guest && isExpired(guest.expiresAt, now(runtime)))
+    await service.deleteGuest(sessionCookie); return { cookie: sessionCookie, cookieName: 'session_cookie', cart: guest && !isExpired(guest.expiresAt, now(runtime)) ? guest.cart : [], save: async (cart) => { await service.upsertGuestCart(sessionCookie, cart, expiresAt(runtime)); } }; }
+function assertValidOrderStatus(status) { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled'].includes(status))
     throw new Error('Invalid order status.'); }
+async function sendOrderStatusEmail(order, runtime) { if (order.status === 'fulfilled')
+    await sendOrderEmail('order_fulfilled', order, runtime); if (order.status === 'shipped')
+    await sendOrderEmail('order_shipped', order, runtime); if (order.status === 'cancelled')
+    await sendOrderEmail('order_cancelled', order, runtime); }
+async function sendOrderEmail(event, order, runtime) { await (runtime.emailService ?? new NoopEmailService()).send(createOrderEmailMessage(event, order)); }
+function toCheckoutResult(order) { const totals = (order.details.totals ?? {}); return { orderId: order.orderId, status: order.status, totals: { subtotal: Number(totals.subtotal ?? 0), discountTotal: Number(totals.discountTotal ?? 0), shipping: Number(totals.shipping ?? 0), tax: Number(totals.tax ?? 0), grandTotal: Number(totals.grandTotal ?? order.chargedAmount) }, purchasedPatternDownloadsAvailable: order.status === 'paid' || order.status === 'fulfilled' || order.status === 'shipped' }; }
 function validateBlogArticle(input) { assertRequired(input.title, 'title'); assertRequired(input.slug, 'slug'); assertRequired(input.excerpt, 'excerpt'); validateBlogBlocks(input.blocks); }
 function validateBlogBlocks(blocks) { if (!Array.isArray(blocks))
     throw new Error('Invalid blog blocks.'); for (const block of blocks) {
@@ -217,4 +373,7 @@ function validateBlogBlocks(blocks) { if (!Array.isArray(blocks))
         throw new Error('Invalid blog block.');
 } }
 function roundCurrency(value) { return Math.round(value * 100) / 100; }
+function now(runtime = {}) { return runtime.now?.() ?? new Date(); }
+function expiresAt(runtime = {}) { return new Date(now(runtime).getTime() + SESSION_TTL_MS); }
+function isExpired(expiresAtValue, reference) { return new Date(expiresAtValue).getTime() <= reference.getTime(); }
 async function loadBackendConfig() { const configPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../config.json'); return JSON.parse(await readFile(configPath, 'utf8')); }

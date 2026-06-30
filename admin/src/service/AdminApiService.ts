@@ -1,5 +1,6 @@
 export type ProductType = 'plushie' | 'pattern'
-export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled'
+export type ProductSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large'
+export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled'
 export type BlogBlock =
   | { type: 'heading'; level: 1 | 2 | 3; text: string }
   | { type: 'paragraph'; text: string }
@@ -10,12 +11,12 @@ export interface AdminCredentials { email: string; password: string }
 export interface AdminIdentity { email: string; name: string }
 export interface AdminLoginResult { admin: AdminIdentity; cookie: string }
 export interface ProductColorVariation { name: string; imageUrl?: string }
-export interface ProductBaseInput { type: ProductType; title: string; price: number; description: string; thumbnailImage: string; available: boolean }
+export interface ProductBaseInput { type: ProductType; title: string; price: number; salePrice?: number; isSaleItem?: boolean; description: string; thumbnailImage: string; available: boolean; sizes?: ProductSize[]; tags?: string[]; inventoryCount?: number }
 export interface PlushieProductInput extends ProductBaseInput { type: 'plushie'; readyToShip: boolean; colorVariations: ProductColorVariation[] }
 export interface PatternProductInput extends ProductBaseInput { type: 'pattern'; pdfKey: string }
 export type CreateProductInput = PlushieProductInput | PatternProductInput
 export type UpdateProductInput = Partial<Omit<PlushieProductInput, 'type'> & Omit<PatternProductInput, 'type'>>
-export interface ProductRecord extends ProductBaseInput { id: string; readyToShip?: boolean; colorVariations?: ProductColorVariation[]; pdfKey?: string; createdAt?: string; updatedAt?: string }
+export interface ProductRecord extends ProductBaseInput { id: string; isSaleItem: boolean; sizes: ProductSize[]; readyToShip?: boolean; colorVariations?: ProductColorVariation[]; pdfKey?: string; createdAt?: string; updatedAt?: string }
 export interface ProductPhotoUploadResult { bucket: string; key: string; publicUrl: string }
 export interface PatternPdfUploadResult { bucket: string; key: string }
 export interface ApiEndpointDoc { method: string; path: string; summary: string; auth: string }
@@ -55,7 +56,7 @@ export class FetchAdminApiService implements AdminApiService {
   async loadApiDocs(): Promise<ApiDocsResponse> { return this.request<ApiDocsResponse>('/docs') }
   async login(credentials: AdminCredentials): Promise<AdminLoginResult> { return this.request<AdminLoginResult>('/admin/login', jsonInit('POST', credentials)) }
   async listOrders(): Promise<OrderRecord[]> { return (await this.request<{ orders: OrderRecord[] }>('/admin/orders')).orders }
-  async markOrderShipped(orderId: string): Promise<OrderRecord> { return (await this.request<{ order: OrderRecord }>(`/admin/orders/${encodeURIComponent(orderId)}/status`, jsonInit('PATCH', { status: 'fulfilled' }))).order }
+  async markOrderShipped(orderId: string): Promise<OrderRecord> { return (await this.request<{ order: OrderRecord }>(`/admin/orders/${encodeURIComponent(orderId)}/status`, jsonInit('PATCH', { status: 'shipped' }))).order }
   async listProducts(): Promise<ProductRecord[]> { return (await this.request<{ products: ProductRecord[] }>('/admin/products')).products }
   async createProduct(input: CreateProductInput): Promise<ProductRecord> { return (await this.request<{ product: ProductRecord }>('/admin/products', jsonInit('POST', input))).product }
   async updateProduct(productId: string, input: UpdateProductInput): Promise<ProductRecord> { return (await this.request<{ product: ProductRecord }>(`/admin/products/${encodeURIComponent(productId)}`, jsonInit('PATCH', input))).product }

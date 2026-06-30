@@ -1,0 +1,215 @@
+export interface LoginInput {
+  email: string
+  password: string
+}
+
+export interface RegisterInput {
+  email: string
+  name: string
+  password: string
+}
+
+export type ClientSessionState =
+  | { status: 'loading' }
+  | { status: 'guest' }
+  | { status: 'authenticated'; user: PublicUser }
+
+export interface PublicUser {
+  email: string
+  name: string
+  cart: unknown[]
+  pdfKeys: string[]
+}
+
+export interface UserProfileDetails {
+  email: string
+  name: string
+  addressBook?: unknown
+  emailNotificationsEnabled?: boolean
+}
+
+export interface OrderRecord {
+  orderId: string
+  productId: string
+  clientEmail: string
+  details: Record<string, unknown>
+  clientInstructions: string
+  chargedAmount: number
+  status: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface PurchasedPatternDownload {
+  productId: string
+  orderId: string
+  title: string
+  purchasedAt: string
+  downloadUrl?: string
+  expiresAt?: string
+}
+
+export interface ClientProfileResponse {
+  user: UserProfileDetails
+  orders: OrderRecord[]
+  purchasedPatterns: PurchasedPatternDownload[]
+}
+
+export interface CsrfTokenResponse {
+  token: string
+  headerName: string
+}
+
+export type ProductType = 'plushie' | 'pattern'
+export type ProductSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large'
+
+export interface ProductColorVariation {
+  name: string
+  imageUrl?: string
+}
+
+export interface ProductBase {
+  id: string
+  type: ProductType
+  title: string
+  price: number
+  salePrice?: number
+  isSaleItem: boolean
+  description: string
+  thumbnailImage: string
+  available: boolean
+  sizes: ProductSize[]
+  tags?: string[]
+  inventoryCount?: number
+}
+
+export interface PlushieProduct extends ProductBase {
+  type: 'plushie'
+  readyToShip: boolean
+  colorVariations: ProductColorVariation[]
+}
+
+export interface PatternProduct extends ProductBase {
+  type: 'pattern'
+  pdfKey: string
+}
+
+export type Product = PlushieProduct | PatternProduct
+
+export interface ShopProductListResponse {
+  products: Product[]
+}
+
+export interface MarketEventSummary {
+  id: string
+  title: string
+  startsAt: string
+  locationName: string
+  source?: 'temporary-placeholder'
+}
+
+export interface HomeViewModel {
+  featuredProducts: Product[]
+  nextMarket: MarketEventSummary | null
+}
+
+export type ProductSortKey = 'createdAt' | 'price' | 'title'
+export type ProductSortDirection = 'asc' | 'desc'
+export type ShopProductTypeFilter = ProductType | 'all'
+
+export interface ShopProductFilters {
+  type?: ShopProductTypeFilter
+  saleOnly?: boolean
+  color?: string
+  size?: ProductSize
+  tags?: string[]
+}
+
+export interface ShopProductBatchRequest {
+  filters?: ShopProductFilters
+  batchSize?: number
+  afterId?: string
+  sort?: ProductSortKey
+  direction?: ProductSortDirection
+}
+
+export interface ShopProductBatchResponse {
+  products: Product[]
+  nextCursor?: string
+  hasMore: boolean
+  appliedFilters: ShopProductFilters
+}
+
+export interface CartItemInput {
+  productId: string
+  productType?: ProductType
+  quantity?: number
+  colorVariation?: string
+  selectedColor?: string
+  selectedSize?: ProductSize
+  clientInstructions?: string
+}
+
+export interface CartResponse {
+  cart: CartItemInput[]
+}
+
+export interface UpdateCartItemInput {
+  quantity?: number
+  colorVariation?: string
+  selectedColor?: string
+  selectedSize?: ProductSize
+  clientInstructions?: string
+}
+
+export interface CartLineItemSnapshot {
+  itemId: string
+  productId: string
+  productType: ProductType
+  title: string
+  thumbnailImage: string
+  quantity: number
+  unitPrice: number
+  regularUnitPrice: number
+  salePrice?: number
+  lineTotal: number
+  selectedColor?: string
+  selectedSize?: ProductSize
+  clientInstructions: string
+}
+
+export interface CartSnapshot {
+  items: CartLineItemSnapshot[]
+  subtotal: number
+  containsPatterns: boolean
+  guestCheckoutAllowed: boolean
+}
+
+export interface CheckoutAddress {
+  country: string
+  state?: string
+  postalCode?: string
+}
+
+export interface CheckoutEstimateRequest {
+  shippingAddress: CheckoutAddress
+  billingAddress?: CheckoutAddress
+}
+
+export interface CheckoutEstimateResponse {
+  subtotal: number
+  shipping: number
+  tax: number
+  discount: number
+  grandTotal: number
+  currency: 'USD'
+}
+
+export interface ShopViewModel {
+  products: Product[]
+  filters: ShopProductFilters
+  nextCursor?: string
+  hasMore: boolean
+  selectedProduct: Product | null
+  notice?: string
+}

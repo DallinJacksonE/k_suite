@@ -60,6 +60,12 @@ const cartFields: ApiFieldDoc[] = [
 const shopProductQueryFields: ApiFieldDoc[] = [
   { name: 'batchSize', type: 'number', location: 'query', required: false, description: 'Positive page size. Defaults to 20.' },
   { name: 'afterId', type: 'string', location: 'query', required: false, description: 'Returns products after this product id.' },
+  { name: 'type', type: "'plushie' | 'pattern' | 'all'", location: 'query', required: false, description: 'Product type filter for /api/shop/products.' },
+  { name: 'sort', type: "'createdAt' | 'price' | 'title'", location: 'query', required: false, description: 'Sort key.' },
+  { name: 'direction', type: "'asc' | 'desc'", location: 'query', required: false, description: 'Sort direction.' },
+  { name: 'saleOnly', type: 'boolean', location: 'query', required: false, description: 'Only return sale items.' },
+  { name: 'color', type: 'string', location: 'query', required: false, description: 'Plushie color filter.' },
+  { name: 'size', type: 'ProductSize', location: 'query', required: false, description: 'Product size filter.' },
 ];
 
 export const apiDocs: ApiDocsResponse = {
@@ -119,7 +125,7 @@ export const apiDocs: ApiDocsResponse = {
       contentType: 'application/json',
       fields: [
         { name: 'orderId', type: 'string', location: 'path', required: true, description: 'Order id to update.' },
-        { name: 'status', type: "'pending' | 'paid' | 'fulfilled' | 'cancelled'", location: 'body', required: true, description: 'New order status.' },
+        { name: 'status', type: "'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled'", location: 'body', required: true, description: 'New order status.' },
       ],
       responses: [{ status: 200, description: 'Order status updated.', body: '{ order: OrderRecord }' }],
     },
@@ -326,6 +332,45 @@ export const apiDocs: ApiDocsResponse = {
     },
     {
       method: 'GET',
+      path: '/api/shop/products',
+      summary: 'List available shop products with filters, sorts, and cursor pagination.',
+      auth: 'None.',
+      fields: shopProductQueryFields,
+      responses: [{ status: 200, description: 'Filtered product batch returned.', body: 'ShopProductBatchResponse' }],
+    },
+    {
+      method: 'GET',
+      path: '/api/shop/cart',
+      summary: 'Read the current guest or authenticated cart with product snapshots and totals.',
+      auth: 'Optional session_cookie or client_cookie.',
+      responses: [{ status: 200, description: 'Cart snapshot returned.', body: 'CartSnapshot' }],
+    },
+    {
+      method: 'PATCH',
+      path: '/api/shop/cart/items/:itemId',
+      summary: 'Update one cart line item by variant-safe item id.',
+      auth: 'Optional session_cookie or client_cookie with CSRF token.',
+      contentType: 'application/json',
+      responses: [{ status: 200, description: 'Updated cart snapshot returned.', body: 'CartSnapshot' }],
+    },
+    {
+      method: 'POST',
+      path: '/api/shop/checkout/estimate',
+      summary: 'Estimate shipping, tax, and grand total for the current cart.',
+      auth: 'Optional session_cookie or client_cookie.',
+      contentType: 'application/json',
+      responses: [{ status: 200, description: 'Checkout estimate returned.', body: 'CheckoutEstimateResponse' }],
+    },
+    {
+      method: 'POST',
+      path: '/api/shop/checkout',
+      summary: 'Create a pending order from the current cart without capturing payment.',
+      auth: 'Optional session_cookie or client_cookie with CSRF token; patterns require client_cookie.',
+      contentType: 'application/json',
+      responses: [{ status: 201, description: 'Pending checkout order created or idempotent result returned.', body: 'CheckoutResult' }],
+    },
+    {
+      method: 'GET',
       path: '/api/user/auth',
       summary: 'Log in a user with email and password query parameters.',
       auth: 'None.',
@@ -356,6 +401,50 @@ export const apiDocs: ApiDocsResponse = {
         { status: 201, description: 'User registered.', body: '{ user: PublicUser; cookie: string }' },
         { status: 400, description: 'Missing required user fields.' },
       ],
+    },
+    {
+      method: 'POST',
+      path: '/api/user/login',
+      summary: 'Log in a user with email and password JSON body.',
+      auth: 'None.',
+      contentType: 'application/json',
+      fields: [
+        { name: 'email', type: 'string', location: 'body', required: true, description: 'User email.' },
+        { name: 'password', type: 'string', location: 'body', required: true, description: 'User password.' },
+      ],
+      setsCookies: ['client_cookie'],
+      responses: [
+        { status: 200, description: 'User login succeeded.', body: 'ClientSessionState' },
+        { status: 401, description: 'Invalid user credentials.' },
+        { status: 429, description: 'Too many login attempts.' },
+      ],
+    },
+    {
+      method: 'POST',
+      path: '/api/user/logout',
+      summary: 'Log out the current client user and clear client_cookie.',
+      auth: 'Optional client_cookie.',
+      clearsCookies: ['client_cookie'],
+      responses: [{ status: 204, description: 'Client session cleared.' }],
+    },
+    {
+      method: 'GET',
+      path: '/api/user/csrf',
+      summary: 'Issue a double-submit CSRF token for cookie-authenticated mutating requests.',
+      auth: 'None.',
+      setsCookies: ['csrf_token'],
+      responses: [{ status: 200, description: 'CSRF token issued.', body: '{ token: string; headerName: string }' }],
+    },
+    {
+      method: 'GET',
+      path: '/api/user/session',
+      summary: 'Return current client session state from client_cookie or guest state from session_cookie.',
+      auth: 'Optional client_cookie or session_cookie.',
+      fields: [
+        { name: 'client_cookie', type: 'string', location: 'cookie', required: false, description: 'Authenticated user session cookie.' },
+        { name: 'session_cookie', type: 'string', location: 'cookie', required: false, description: 'Guest cart session cookie.' },
+      ],
+      responses: [{ status: 200, description: 'Session state returned.', body: 'ClientSessionState' }],
     },
     {
       method: 'GET',

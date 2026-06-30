@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
-import type { ProductColorVariation, ProductRecord, ProductType, UpdateProductInput } from '../../service/AdminApiService'
+import type { ProductColorVariation, ProductRecord, ProductSize, ProductType, UpdateProductInput } from '../../service/AdminApiService'
 import type { ProductFormInput } from '../../presenter/AdminDashboardPresenter'
 import { Panel } from '../layout/Panel'
 
@@ -21,6 +21,7 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
   const [pdfKey, setPdfKey] = useState('')
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [colorVariations, setColorVariations] = useState<ProductColorVariation[]>([{ name: '' }])
+  const [sizes, setSizes] = useState<ProductSize[]>([])
 
   const submitCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -29,10 +30,15 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
       type: productType,
       title: read(fields, 'title'),
       price: read(fields, 'price'),
+      salePrice: read(fields, 'salePrice'),
+      isSaleItem: fields.get('isSaleItem') === 'on',
       description: read(fields, 'description'),
       thumbnailImage,
       available: fields.get('available') === 'on',
       readyToShip: fields.get('readyToShip') === 'on',
+      sizes,
+      tags: read(fields, 'tags'),
+      inventoryCount: read(fields, 'inventoryCount'),
       colorVariations,
       pdfKey,
     })
@@ -55,6 +61,10 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
           <label>Type<select value={productType} onChange={(event) => setProductType(event.target.value as ProductType)}><option value="plushie">Plushie</option><option value="pattern">Pattern</option></select></label>
           <label>Title<input name="title" required /></label>
           <label>Price<input name="price" type="number" min="0.01" step="0.01" required /></label>
+          <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" /></label>
+          <label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" /></label>
+          <label>Tags<input name="tags" placeholder="featured, market" /></label>
+          <SizePicker sizes={sizes} onChange={setSizes} />
           <label className="full-width">Description<textarea name="description" rows={4} required /></label>
           <UploadControl label="Product image" accept="image/*" onUpload={async (file) => setThumbnailImage(await onUploadImage(file))} />
           {thumbnailImage ? <img className="image-preview" src={thumbnailImage} alt="Uploaded product preview" /> : null}
@@ -78,6 +88,7 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
             <><UploadControl label="Pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
           )}
           <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked />Available</label>
+          <label className="checkbox-label"><input name="isSaleItem" type="checkbox" />Sale item</label>
           <button type="submit" disabled={busy}>Create product</button>
         </form>
       </Panel>
@@ -92,6 +103,8 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
                 <li key={product.id} className={selected ? 'product-listing selected' : 'product-listing'}>
                   <button type="button" className="product-listing-summary" onClick={() => toggleProduct(product.id)} aria-expanded={selected}>
                     <span className="product-listing-main"><strong>{product.title}</strong><span>{product.type} · {product.id}</span></span>
+                    <span>{product.isSaleItem ? `Sale ${formatPrice(product.salePrice ?? product.price)} · was ${formatPrice(product.price)}` : formatPrice(product.price)}</span>
+                    <span>{product.inventoryCount === undefined ? 'Inventory: unlimited' : `Inventory: ${product.inventoryCount}`}</span>
                     <span>{product.description}</span>
                     {product.type === 'plushie' ? <span>{formatVariations(product.colorVariations ?? [])}</span> : null}
                     {product.thumbnailImage ? <img className="thumb-preview" src={product.thumbnailImage} alt="" /> : null}
@@ -119,6 +132,7 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
   const [thumbnailImage, setThumbnailImage] = useState(product.thumbnailImage)
   const [pdfKey, setPdfKey] = useState(product.pdfKey ?? '')
   const [colorVariations, setColorVariations] = useState<ProductColorVariation[]>(product.colorVariations?.length ? product.colorVariations : [{ name: '' }])
+  const [sizes, setSizes] = useState<ProductSize[]>(product.sizes ?? [])
 
   const submitEdit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -126,9 +140,14 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
     const update: UpdateProductInput = {
       title: read(fields, 'title'),
       price: Number(read(fields, 'price')),
+      salePrice: optionalNumber(read(fields, 'salePrice')),
+      isSaleItem: fields.get('isSaleItem') === 'on',
       description: read(fields, 'description'),
       thumbnailImage,
       available: fields.get('available') === 'on',
+      sizes,
+      tags: parseTags(read(fields, 'tags')),
+      inventoryCount: optionalNumber(read(fields, 'inventoryCount')),
     }
     if (product.type === 'plushie') {
       update.readyToShip = fields.get('readyToShip') === 'on'
@@ -149,6 +168,10 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
     <form onSubmit={submitEdit} className="form-grid two-column product-inline-editor">
       <label>Title<input name="title" defaultValue={product.title} required /></label>
       <label>Price<input name="price" type="number" min="0.01" step="0.01" defaultValue={product.price} required /></label>
+      <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" defaultValue={product.salePrice ?? ''} /></label>
+      <label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" defaultValue={product.inventoryCount ?? ''} /></label>
+      <label>Tags<input name="tags" defaultValue={product.tags?.join(', ') ?? ''} /></label>
+      <SizePicker sizes={sizes} onChange={setSizes} />
       <label className="full-width">Description<textarea name="description" rows={3} defaultValue={product.description} required /></label>
       <UploadControl label="Replace product image" accept="image/*" onUpload={async (file) => setThumbnailImage(await onUploadImage(file))} />
       {thumbnailImage ? <img className="image-preview" src={thumbnailImage} alt="Selected product preview" /> : null}
@@ -172,6 +195,7 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
         <><UploadControl label="Replace pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
       )}
       <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked={product.available} />Available</label>
+      <label className="checkbox-label"><input name="isSaleItem" type="checkbox" defaultChecked={product.isSaleItem} />Sale item</label>
       <div className="button-row full-width">
         <button type="submit" disabled={busy}>Save edits</button>
         <button type="button" className="danger-button" onClick={() => window.confirm('Delete this product listing?') && onDelete(product.id)} disabled={busy}>Delete product</button>
@@ -197,6 +221,26 @@ function ColorVariationRow({ variation, canRemove, onChange, onRemove, onUploadI
   )
 }
 
+const productSizeOptions: ProductSize[] = ['extra-small', 'small', 'medium', 'large', 'extra-large']
+
+function SizePicker({ sizes, onChange }: { sizes: ProductSize[]; onChange(sizes: ProductSize[]): void }) {
+  return (
+    <fieldset className="full-width checkbox-group">
+      <legend>Sizes</legend>
+      {productSizeOptions.map((size) => (
+        <label key={size} className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={sizes.includes(size)}
+            onChange={(event) => onChange(event.target.checked ? [...sizes, size] : sizes.filter((current) => current !== size))}
+          />
+          {size}
+        </label>
+      ))}
+    </fieldset>
+  )
+}
+
 function UploadControl({ label, accept, onUpload }: { label: string; accept: string; onUpload(file: File | null): Promise<void> }) {
   return <label>{label}<input type="file" accept={accept} onChange={(event) => void onUpload(event.currentTarget.files?.[0] ?? null)} /></label>
 }
@@ -210,3 +254,6 @@ function formatVariations(variations: ProductColorVariation[]): string {
   return variations.map((variation) => variation.imageUrl ? `${variation.name} (image)` : variation.name).join(', ')
 }
 function read(fields: FormData, name: string): string { const value = fields.get(name); return typeof value === 'string' ? value : '' }
+function optionalNumber(value: string): number | undefined { return value.trim() ? Number(value) : undefined }
+function parseTags(value: string): string[] | undefined { const tags = value.split(',').map((tag) => tag.trim()).filter(Boolean); return tags.length ? tags : undefined }
+function formatPrice(value: number): string { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value) }

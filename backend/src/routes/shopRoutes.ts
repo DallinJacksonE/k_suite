@@ -1,9 +1,11 @@
 import { Router, type Request, type Response } from 'express';
-import type { CartItemInput, MariaDbAccess, ProductType } from '@k_suite/shared';
+import type { CartItemInput, CheckoutEstimateRequest, CheckoutRequest, MariaDbAccess, ProductSize, ProductSortDirection, ProductSortKey, ProductType, ShopProductTypeFilter, UpdateCartItemInput } from '@k_suite/shared';
 import { createMariaDbAccess } from '../db/mariadb_access.js';
+import { readCookie, setClientCookie, setSessionCookie } from './cookieHelpers.js';
+import { requireCsrfToken } from './csrfHelpers.js';
 
 export interface ShopRouterDeps {
-  access?: Pick<MariaDbAccess, 'listShopProducts' | 'addCartItem' | 'removeCartItem'>;
+  access?: Pick<MariaDbAccess, 'listShopProducts' | 'getCart' | 'addCartItem' | 'updateCartItem' | 'removeCartItem' | 'estimateCheckout' | 'checkout'>;
 }
 
 export function createShopRouter(deps: ShopRouterDeps = {}): Router {
@@ -12,6 +14,23 @@ export function createShopRouter(deps: ShopRouterDeps = {}): Router {
 
   mountProductRoutes(router, access, 'plushie', '/plushies');
   mountProductRoutes(router, access, 'pattern', '/patterns');
+  router.get('/products', asyncHandler(async (req, res) => {
+    res.json(await access.listShopProducts(readProductBatchRequest(req)));
+  }));
+  router.get('/cart', asyncHandler(async (req, res) => {
+    res.json(await access.getCart(readCartCookies(req)));
+  }));
+  router.patch('/cart/items/:itemId', asyncHandler(async (req, res) => {
+    requireCsrfToken(req);
+    res.json(await access.updateCartItem(String(req.params.itemId), req.body as UpdateCartItemInput, readCartCookies(req)));
+  }));
+  router.post('/checkout/estimate', asyncHandler(async (req, res) => {
+    res.json(await access.estimateCheckout(req.body as CheckoutEstimateRequest, readCartCookies(req)));
+  }));
+  router.post('/checkout', asyncHandler(async (req, res) => {
+    requireCsrfToken(req);
+    res.status(201).json(await access.checkout(req.body as CheckoutRequest, readCartCookies(req)));
+  }));
 
   return router;
 }
@@ -20,21 +39,25 @@ export const shopRouter = createShopRouter();
 
 function mountProductRoutes(router: Router, access: Pick<MariaDbAccess, 'listShopProducts' | 'addCartItem' | 'removeCartItem'>, productType: ProductType, path: string): void {
   router.get(path, asyncHandler(async (req, res) => {
-    const products = await access.listShopProducts(productType, readOptionalNumber(req, 'batchSize'), readOptionalString(req, 'afterId'));
-    res.json({ products });
+    const batch = await access.listShopProducts({ filters: { type: productType }, batchSize: readOptionalNumber(req, 'batchSize'), afterId: readOptionalString(req, 'afterId') });
+    res.json({ products: batch.products });
   }));
 
   router.post(path, asyncHandler(async (req, res) => {
+    requireCsrfToken(req);
     const result = await access.addCartItem(req.body as CartItemInput, readCartCookies(req));
-    setCookie(res, result.cookieName, result.cookie);
+    if (result.cookieName === 'client_cookie') setClientCookie(res, result.cookie);
+    else setSessionCookie(res, result.cookie);
     res.json({ cart: result.cart });
   }));
 
   router.delete(path, asyncHandler(async (req, res) => {
+    requireCsrfToken(req);
     const productId = (req.body as { productId?: unknown }).productId;
     if (typeof productId !== 'string' || !productId) throw new Error('productId is required.');
     const result = await access.removeCartItem(productId, readCartCookies(req));
-    setCookie(res, result.cookieName, result.cookie);
+    if (result.cookieName === 'client_cookie') setClientCookie(res, result.cookie);
+    else setSessionCookie(res, result.cookie);
     res.json({ cart: result.cart });
   }));
 }
@@ -43,7 +66,7 @@ function asyncHandler(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response): void => {
     handler(req, res).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      const status = message.includes('required') || message.includes('Invalid') ? 400 : 500;
+      const status = (error as { statusCode?: number }).statusCode ?? (message.includes('required') || message.includes('Invalid') ? 400 : 500);
       res.status(status).json({ error: message });
     });
   };
@@ -56,15 +79,6 @@ function readCartCookies(req: Request): { sessionCookie?: string; clientCookie?:
   };
 }
 
-function readCookie(req: Request, name: string): string | undefined {
-  const rawCookie = req.headers.cookie ?? '';
-  const cookie = rawCookie.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
-  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : undefined;
-}
-
-function setCookie(res: Response, name: string, value: string): void {
-  res.cookie(name, value, { httpOnly: true, sameSite: 'lax' });
-}
 
 function readOptionalString(req: Request, name: string): string | undefined {
   const value = req.query[name];
@@ -77,4 +91,55 @@ function readOptionalNumber(req: Request, name: string): number | undefined {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive number.`);
   return parsed;
+}
+
+function readProductBatchRequest(req: Request) {
+  return {
+    filters: {
+      type: readProductTypeFilter(req) ?? 'all',
+      saleOnly: readOptionalBoolean(req, 'saleOnly'),
+      color: readOptionalString(req, 'color'),
+      size: readProductSize(req),
+    },
+    batchSize: readOptionalNumber(req, 'batchSize'),
+    afterId: readOptionalString(req, 'afterId'),
+    sort: readProductSortKey(req),
+    direction: readSortDirection(req),
+  };
+}
+
+function readProductTypeFilter(req: Request): ShopProductTypeFilter | undefined {
+  const value = readOptionalString(req, 'type');
+  if (value === undefined) return undefined;
+  if (['plushie', 'pattern', 'all'].includes(value)) return value as ShopProductTypeFilter;
+  throw new Error('type must be plushie, pattern, or all.');
+}
+
+function readProductSize(req: Request): ProductSize | undefined {
+  const value = readOptionalString(req, 'size');
+  if (value === undefined) return undefined;
+  if (['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value)) return value as ProductSize;
+  throw new Error('size is invalid.');
+}
+
+function readProductSortKey(req: Request): ProductSortKey | undefined {
+  const value = readOptionalString(req, 'sort');
+  if (value === undefined) return undefined;
+  if (['createdAt', 'price', 'title'].includes(value)) return value as ProductSortKey;
+  throw new Error('sort is invalid.');
+}
+
+function readSortDirection(req: Request): ProductSortDirection | undefined {
+  const value = readOptionalString(req, 'direction');
+  if (value === undefined) return undefined;
+  if (['asc', 'desc'].includes(value)) return value as ProductSortDirection;
+  throw new Error('direction is invalid.');
+}
+
+function readOptionalBoolean(req: Request, name: string): boolean | undefined {
+  const value = readOptionalString(req, name);
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false.`);
 }

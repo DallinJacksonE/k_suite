@@ -12,6 +12,10 @@ import {
   listShopProducts,
   addCartItem,
   removeCartItem,
+  getCart,
+  updateCartItem,
+  estimateCheckout,
+  checkout,
   newCookie,
 } from '../dist/db/mariadb_access.js';
 
@@ -31,20 +35,25 @@ class FakeService {
   async deleteUser(email) { this.users.delete(email); }
   async insertAdmin(admin) { this.admins.set(admin.email, admin); return admin; }
   async findAdminByEmail(email) { return this.admins.get(email) ?? null; }
-  async upsertCookie(email, cookie, kind = 'client') { this.cookies.set(cookie, { email, cookie, kind }); }
+  async upsertCookie(email, cookie, kind = 'client', expiresAt = new Date(Date.now() + 7_200_000)) { this.cookies.set(cookie, { email, cookie, kind, lastSeenAt: new Date(), expiresAt }); }
   async findCookie(cookie) { return this.cookies.get(cookie) ?? null; }
   async deleteCookie(cookie) { this.cookies.delete(cookie); }
+  async touchCookie(cookie, expiresAt) { const record = this.cookies.get(cookie); if (record) this.cookies.set(cookie, { ...record, lastSeenAt: new Date(), expiresAt }); }
+  async deleteExpiredCookies(now) { for (const [cookie, record] of this.cookies) if (record.expiresAt <= now) this.cookies.delete(cookie); }
   async insertProduct(product) { this.products.set(product.id, { ...product, available: product.available ?? true }); return this.products.get(product.id); }
   async updateProduct(productId, patch) { this.products.set(productId, { ...this.products.get(productId), ...patch }); return this.products.get(productId); }
   async findProductById(productId) { return this.products.get(productId) ?? null; }
   async insertOrder(order) { this.orders.push(order); return order; }
+  async findOrderByIdempotencyKey(idempotencyKey) { return this.orders.find((order) => order.idempotencyKey === idempotencyKey) ?? null; }
   async listOrdersForUser(email) { return this.orders.filter((order) => order.clientEmail === email); }
   async listOrders() { return this.orders; }
   async initialize() {}
   async close() {}
-  async upsertGuestCart(guestCookie, cart) { const guest = { guestCookie, cart }; this.guests.set(guestCookie, guest); return guest; }
+  async upsertGuestCart(guestCookie, cart, expiresAt = new Date(Date.now() + 7_200_000)) { const guest = { guestCookie, cart, lastSeenAt: new Date(), expiresAt }; this.guests.set(guestCookie, guest); return guest; }
   async findGuestByCookie(guestCookie) { return this.guests.get(guestCookie) ?? null; }
   async deleteGuest(guestCookie) { this.guests.delete(guestCookie); }
+  async touchGuest(guestCookie, expiresAt) { const record = this.guests.get(guestCookie); if (record) this.guests.set(guestCookie, { ...record, lastSeenAt: new Date(), expiresAt }); }
+  async deleteExpiredGuests(now) { for (const [guestCookie, record] of this.guests) if (record.expiresAt <= now) this.guests.delete(guestCookie); }
   async removeProduct(productId) { await this.updateProduct(productId, { available: false }); }
   async listProducts(productType, includeUnavailable = false) { return [...this.products.values()].filter((product) => (!productType || product.type === productType) && (includeUnavailable || product.available)); }
 }
@@ -87,6 +96,20 @@ test('getUser requires a matching client cookie and includes orders', async () =
   await assert.rejects(() => access.getUser('a@example.com', 'bad-cookie'), /Invalid or expired cookie/);
 });
 
+test('authenticated activity rejects expired cookies and refreshes active cookies', async () => {
+  const service = new FakeService();
+  const { cookie } = await addUser({ email: 'a@example.com', name: 'Ada', password: 'correct horse' }, service, { randomBytes: () => 'cookie-1' });
+  service.cookies.get(cookie).expiresAt = new Date(Date.now() - 1_000);
+
+  await assert.rejects(() => getUser('a@example.com', cookie, service), /Invalid or expired cookie/);
+
+  const fresh = await loginUser({ email: 'a@example.com', password: 'correct horse' }, service, { randomBytes: () => 'cookie-2' });
+  const before = service.cookies.get(fresh.cookie).expiresAt.getTime();
+  await getUser('a@example.com', fresh.cookie, service);
+
+  assert.ok(service.cookies.get(fresh.cookie).expiresAt.getTime() >= before);
+});
+
 test('checkedout moves cart products into pending orders and clears the cart', async () => {
   const service = new FakeService();
   const access = createMariaDbAccess(service, { randomBytes: () => 'cookie-1', randomUUID: () => 'order-1' });
@@ -101,6 +124,57 @@ test('checkedout moves cart products into pending orders and clears the cart', a
   assert.equal(orders[0].status, 'pending');
   assert.equal(orders[0].details.colorVariation, 'red');
   assert.deepEqual((await service.findUserByEmail('a@example.com')).cart, []);
+});
+
+test('checkout creates one pending order snapshot, clears cart, and is idempotent', async () => {
+  const service = new FakeService();
+  const sentEmails = [];
+  await service.insertProduct({ id: 'p1', type: 'plushie', title: 'Plushie', price: 1000, salePrice: 900, isSaleItem: true, readyToShip: true, description: 'Plushie', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], inventoryCount: 2 });
+  await addCartItem({ productId: 'p1', quantity: 2, colorVariation: 'red', selectedSize: 'medium', clientInstructions: 'gift wrap' }, {}, service, { randomBytes: () => 'guest-1' });
+
+  const result = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-1', emailService: { send: async (message) => sentEmails.push(message) } });
+  const duplicate = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-2' });
+
+  assert.equal(result.orderId, 'order-1');
+  assert.equal(result.status, 'pending');
+  assert.equal(result.totals.subtotal, 1800);
+  assert.equal(service.orders.length, 1);
+  assert.equal(service.orders[0].clientEmail, 'ada@example.com');
+  assert.equal(service.orders[0].details.lineItems[0].title, 'Plushie');
+  assert.equal(service.orders[0].details.lineItems[0].salePrice, 900);
+  assert.deepEqual((await service.findGuestByCookie('guest-1')).cart, []);
+  assert.equal(duplicate.orderId, 'order-1');
+  assert.equal(sentEmails.length, 1);
+  assert.equal(sentEmails[0].to, 'ada@example.com');
+});
+
+test('checkout keeps pattern orders pending until payment is confirmed', async () => {
+  const service = new FakeService();
+  await addUser({ email: 'a@example.com', name: 'Ada', password: 'correct horse' }, service, { randomBytes: () => 'client-1' });
+  await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 500, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
+  await addCartItem({ productId: 'pattern-1', quantity: 1 }, { clientCookie: 'client-1' }, service);
+
+  const result = await checkout({ ...checkoutRequest(), idempotencyKey: 'pattern-key' }, { clientCookie: 'client-1' }, service, { randomUUID: () => 'pattern-order' });
+
+  assert.equal(result.status, 'pending');
+  assert.equal(result.purchasedPatternDownloadsAvailable, false);
+  assert.equal(service.orders[0].details.lineItems[0].pdfKey, 'pdfs/patterns/p.pdf');
+  assert.deepEqual((await service.findUserByEmail('a@example.com')).cart, []);
+});
+
+test('order status emails are sent for shipped orders', async () => {
+  const service = new FakeService();
+  const sentEmails = [];
+  await service.insertAdmin({ email: 'admin@example.com', name: 'Admin', passwordHash: 'hash', salt: 'salt' });
+  await newCookie('admin@example.com', undefined, 'admin', service, { randomBytes: () => 'admin-cookie' });
+  await service.insertOrder({ orderId: 'o1', productId: 'p1', clientEmail: 'ada@example.com', details: { totals: { grandTotal: 1000 } }, clientInstructions: '', chargedAmount: 1000, status: 'pending' });
+  service.updateOrderStatus = async (orderId, status) => { const order = service.orders.find((item) => item.orderId === orderId); Object.assign(order, { status }); return order; };
+
+  const access = createMariaDbAccess(service, { emailService: { send: async (message) => sentEmails.push(message) } });
+  const order = await access.updateOrderStatus('admin-cookie', 'o1', 'shipped');
+
+  assert.equal(order.status, 'shipped');
+  assert.equal(sentEmails[0].subject, 'Your K Suite order has shipped');
 });
 
 test('admin product writes require an admin cookie and generate a product id', async () => {
@@ -138,6 +212,21 @@ test('guest cart creates session_cookie and merges repeated product/color entrie
   assert.equal(second.cookie, 'session-1');
   assert.equal(second.cart[0].quantity, 3);
   assert.deepEqual((await service.findGuestByCookie('session-1')).cart, second.cart);
+  assert.ok((await service.findGuestByCookie('session-1')).expiresAt instanceof Date);
+});
+
+test('guest cart expires independently from authenticated cookies', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'p1', type: 'plushie', title: 'Plushie', price: 100, readyToShip: true, description: 'Plushie', thumbnailImage: 'photo', colorVariations: ['red'] });
+  await addCartItem({ productId: 'p1', quantity: 1 }, {}, service, { randomBytes: () => 'session-1' });
+  service.guests.get('session-1').expiresAt = new Date(Date.now() - 1_000);
+
+  const next = await addCartItem({ productId: 'p1', quantity: 1 }, { sessionCookie: 'session-1' }, service);
+
+  assert.equal(next.cart[0].productId, 'p1');
+  assert.equal(next.cart[0].quantity, 1);
+  assert.equal(next.cart[0].clientInstructions, '');
+  assert.ok(service.guests.get('session-1').expiresAt > new Date());
 });
 
 test('client cart uses client_cookie instead of a guest session', async () => {
@@ -163,7 +252,79 @@ test('listShopProducts filters unavailable products and paginates by afterId', a
   await service.insertProduct({ id: 'hidden', type: 'plushie', title: 'Hidden', price: 100, readyToShip: true, description: 'Hidden', thumbnailImage: 'photo', colorVariations: [], available: false });
   await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 500, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
 
-  const products = await listShopProducts('plushie', 1, 'p1', service);
+  const batch = await listShopProducts({ filters: { type: 'plushie' }, batchSize: 1, afterId: 'p1' }, service);
 
-  assert.deepEqual(products.map((product) => product.id), ['p2']);
+  assert.deepEqual(batch.products.map((product) => product.id), ['p2']);
+  assert.equal(batch.hasMore, false);
 });
+
+test('listShopProducts applies filters before deterministic sorting and pagination', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'expensive', type: 'plushie', title: 'Expensive Bear', price: 3000, salePrice: 2500, isSaleItem: true, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], sizes: ['medium'], tags: ['market'], inventoryCount: 5 });
+  await service.insertProduct({ id: 'cheap', type: 'plushie', title: 'Cheap Bear', price: 1000, salePrice: 900, isSaleItem: true, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], sizes: ['medium'], tags: ['featured'], inventoryCount: 3 });
+  await service.insertProduct({ id: 'pattern', type: 'pattern', title: 'Pattern', price: 2000, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf', sizes: ['medium'], tags: ['featured'] });
+  await service.insertProduct({ id: 'blue', type: 'plushie', title: 'Blue Bear', price: 500, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'blue' }], sizes: ['small'], tags: ['featured'], inventoryCount: 3 });
+
+  const batch = await listShopProducts({ filters: { type: 'all', saleOnly: true, color: 'red', size: 'medium' }, sort: 'price', direction: 'asc', batchSize: 1 }, service);
+
+  assert.deepEqual(batch.products.map((product) => product.id), ['cheap']);
+  assert.equal(batch.nextCursor, 'cheap');
+  assert.equal(batch.hasMore, true);
+  assert.deepEqual(batch.appliedFilters, { type: 'all', saleOnly: true, color: 'red', size: 'medium' });
+});
+
+test('cart add rejects unavailable inventory and guest pattern purchases', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'sold-out', type: 'plushie', title: 'Sold Out', price: 100, readyToShip: true, description: 'Sold Out', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], inventoryCount: 0 });
+  await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 500, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
+
+  await assert.rejects(() => addCartItem({ productId: 'sold-out', quantity: 1 }, {}, service), /out of stock/i);
+  await assert.rejects(() => addCartItem({ productId: 'pattern-1', quantity: 1 }, {}, service), /login required/i);
+});
+
+test('cart read and update return product snapshots, preserve variants, and refresh guest expiry', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'p1', type: 'plushie', title: 'Plushie', price: 2500, salePrice: 2000, isSaleItem: true, readyToShip: true, description: 'Plushie', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }, { name: 'blue' }], sizes: ['medium'], inventoryCount: 10 });
+  const red = await addCartItem({ productId: 'p1', quantity: 1, colorVariation: 'red', selectedSize: 'medium' }, {}, service, { randomBytes: () => 'guest-1' });
+  await addCartItem({ productId: 'p1', quantity: 2, colorVariation: 'blue', selectedSize: 'medium' }, { sessionCookie: red.cookie }, service);
+
+  const beforeTouch = service.guests.get('guest-1').expiresAt.getTime();
+  const snapshot = await getCart({ sessionCookie: 'guest-1' }, service);
+  const updated = await updateCartItem(snapshot.items[0].itemId, { quantity: 3 }, { sessionCookie: 'guest-1' }, service);
+
+  assert.equal(snapshot.items.length, 2);
+  assert.equal(snapshot.items[0].title, 'Plushie');
+  assert.equal(snapshot.items[0].unitPrice, 2000);
+  assert.equal(snapshot.subtotal, 6000);
+  assert.equal(updated.items[0].quantity, 3);
+  assert.equal(updated.items[1].quantity, 2);
+  assert.ok(service.guests.get('guest-1').expiresAt.getTime() >= beforeTouch);
+});
+
+test('checkout estimate blocks guest pattern checkout and applies free shipping threshold', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'big', type: 'plushie', title: 'Big Plushie', price: 9000, readyToShip: true, description: 'Big', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }] });
+  await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 1200, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
+  const guest = await addCartItem({ productId: 'big', quantity: 1 }, {}, service, { randomBytes: () => 'guest-1' });
+
+  const estimate = await estimateCheckout({ shippingAddress: { country: 'US', state: 'CA', postalCode: '90210' } }, { sessionCookie: guest.cookie }, service);
+
+  assert.equal(estimate.subtotal, 9000);
+  assert.equal(estimate.shipping, 0);
+  assert.equal(estimate.tax, 743);
+  assert.equal(estimate.grandTotal, 9743);
+
+  await service.upsertGuestCart('guest-pattern', [{ productId: 'pattern-1', quantity: 1 }]);
+  await assert.rejects(() => estimateCheckout({ shippingAddress: { country: 'US', state: 'CA', postalCode: '90210' } }, { sessionCookie: 'guest-pattern' }, service), /log in/i);
+});
+
+function checkoutRequest() {
+  return {
+    idempotencyKey: 'checkout-key-1',
+    contact: { email: 'Ada@Example.com', name: 'Ada Lovelace' },
+    shippingAddress: { name: 'Ada Lovelace', line1: '1 Main St', city: 'Los Angeles', region: 'CA', postalCode: '90210', country: 'US' },
+    billingAddress: { name: 'Ada Lovelace', line1: '1 Main St', city: 'Los Angeles', region: 'CA', postalCode: '90210', country: 'US', sameAsShipping: true },
+    paymentStatus: 'pending',
+    paymentToken: 'placeholder-token',
+  };
+}

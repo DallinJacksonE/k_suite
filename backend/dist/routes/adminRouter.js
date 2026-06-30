@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { createMariaDbAccess } from '../db/mariadb_access.js';
 import { createMinIoBucketService } from '../db/minIo.js';
+import { readCookie, setAdminCookie } from './cookieHelpers.js';
 const upload = multer({ storage: multer.memoryStorage() });
 export function createAdminRouter(deps = {}) {
     const router = Router();
@@ -9,7 +10,7 @@ export function createAdminRouter(deps = {}) {
     const bucket = deps.bucket ?? createMinIoBucketService();
     router.post('/login', asyncHandler(async (req, res) => {
         const result = await access.adminLogin(req.body);
-        res.cookie('admin_cookie', result.cookie, { httpOnly: true, sameSite: 'lax' });
+        setAdminCookie(res, result.cookie);
         res.status(200).json(result);
     }));
     router.get('/orders', asyncHandler(async (req, res) => {
@@ -85,12 +86,10 @@ function asyncHandler(handler) {
     };
 }
 function readAdminCookie(req) {
-    const rawCookie = req.headers.cookie ?? '';
-    const cookie = rawCookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('admin_cookie='));
-    const value = cookie?.slice('admin_cookie='.length) ?? req.header('x-admin-cookie') ?? '';
+    const value = readCookie(req, 'admin_cookie') ?? req.header('x-admin-cookie') ?? '';
     if (!value)
         throw new Error('Admin access required.');
-    return decodeURIComponent(value);
+    return value;
 }
 function requireFile(req) {
     if (!req.file)
@@ -104,7 +103,7 @@ function parsePhotoCategory(value) {
 }
 function readOrderStatus(body) {
     const status = body.status;
-    if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'cancelled')
+    if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'cancelled')
         return status;
     throw new Error('Invalid order status.');
 }

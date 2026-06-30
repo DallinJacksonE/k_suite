@@ -1,0 +1,45 @@
+.home-hero {
+  gap: 18px;
+}
+
+.home-hero h1 {
+  max-width: 840px;
+  font-size: clamp(2.4rem, 7vw, 5.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.08em;
+}
+
+.home-hero p:not(.eyebrow) {
+  max-width: 680px;
+  font-size: 1.1rem;
+}
+
+.home-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cta-link--secondary {
+  color: var(--text-h);
+  background: rgba(var(--panel-rgb), 0.88);
+  border: 1px solid var(--border);
+}
+
+.featured-card {
+  display: grid;
+  gap: 10px;
+}
+
+.featured-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 16px;
+  object-fit: cover;
+  background: rgba(var(--hero-glow-rgb), 0.28);
+}
+
+.featured-card h3 {
+  margin: 0;
+  color: var(--text-h);
+}

@@ -96,10 +96,15 @@ test('create product preserves title and per-color image urls', async () => {
     type: 'plushie',
     title: 'Custom Bear',
     price: '25',
+    salePrice: '20',
+    isSaleItem: true,
     description: 'Soft bear',
     thumbnailImage: 'https://bucket/thumb.png',
     available: true,
     readyToShip: true,
+    sizes: ['medium'],
+    tags: 'featured, market',
+    inventoryCount: '3',
     colorVariations: [
       { name: 'brown', imageUrl: 'https://bucket/brown.png' },
       { name: 'cream' },
@@ -108,6 +113,11 @@ test('create product preserves title and per-color image urls', async () => {
   })
 
   assert.equal(created?.title, 'Custom Bear')
+  assert.equal(created?.salePrice, 20)
+  assert.equal(created?.isSaleItem, true)
+  assert.deepEqual(created?.sizes, ['medium'])
+  assert.deepEqual(created?.tags, ['featured', 'market'])
+  assert.equal(created?.inventoryCount, 3)
   assert.deepEqual(created?.colorVariations, [
     { name: 'brown', imageUrl: 'https://bucket/brown.png' },
     { name: 'cream' },

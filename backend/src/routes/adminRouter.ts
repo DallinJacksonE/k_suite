@@ -3,6 +3,7 @@ import multer from 'multer';
 import type { CreateBlogArticleInput, CreateProductInput, OrderStatus, UpdateBlogArticleInput, UpdateProductInput } from '@k_suite/shared';
 import { createMariaDbAccess, type MariaDbAccess } from '../db/mariadb_access.js';
 import { createMinIoBucketService, type MinIoBucketService, type PhotoCategory } from '../db/minIo.js';
+import { readCookie, setAdminCookie } from './cookieHelpers.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -18,7 +19,7 @@ export function createAdminRouter(deps: AdminRouterDeps = {}): Router {
 
   router.post('/login', asyncHandler(async (req, res) => {
     const result = await access.adminLogin(req.body);
-    res.cookie('admin_cookie', result.cookie, { httpOnly: true, sameSite: 'lax' });
+    setAdminCookie(res, result.cookie);
     res.status(200).json(result);
   }));
 
@@ -113,11 +114,9 @@ function asyncHandler(handler: (req: Request, res: Response) => Promise<void>) {
 }
 
 function readAdminCookie(req: Request): string {
-  const rawCookie = req.headers.cookie ?? '';
-  const cookie = rawCookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('admin_cookie='));
-  const value = cookie?.slice('admin_cookie='.length) ?? req.header('x-admin-cookie') ?? '';
+  const value = readCookie(req, 'admin_cookie') ?? req.header('x-admin-cookie') ?? '';
   if (!value) throw new Error('Admin access required.');
-  return decodeURIComponent(value);
+  return value;
 }
 
 function requireFile(req: Request): Express.Multer.File {
@@ -132,7 +131,7 @@ function parsePhotoCategory(value: string): PhotoCategory {
 
 function readOrderStatus(body: unknown): OrderStatus {
   const status = (body as { status?: unknown }).status;
-  if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'cancelled') return status;
+  if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'cancelled') return status;
   throw new Error('Invalid order status.');
 }
 

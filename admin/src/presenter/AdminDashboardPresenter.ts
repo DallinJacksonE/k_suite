@@ -1,6 +1,6 @@
-import type { AdminApiService, ApiEndpointDoc, BlogArticleInput, BlogArticleRecord, BlogBlock, CreateProductInput, OrderRecord, PatternProductInput, ProductColorVariation, ProductPhotoUploadResult, ProductRecord, ProductType, ServiceHealthReport, UpdateProductInput } from '../service/AdminApiService'
+import type { AdminApiService, ApiEndpointDoc, BlogArticleInput, BlogArticleRecord, BlogBlock, CreateProductInput, OrderRecord, PatternProductInput, ProductColorVariation, ProductPhotoUploadResult, ProductRecord, ProductSize, ProductType, ServiceHealthReport, UpdateProductInput } from '../service/AdminApiService'
 
-export interface ProductFormInput { type: ProductType; title: string; price: string; description: string; thumbnailImage: string; available: boolean; readyToShip: boolean; colorVariations: ProductColorVariation[]; pdfKey: string }
+export interface ProductFormInput { type: ProductType; title: string; price: string; salePrice?: string; isSaleItem: boolean; description: string; thumbnailImage: string; available: boolean; readyToShip: boolean; sizes: ProductSize[]; tags: string; inventoryCount?: string; colorVariations: ProductColorVariation[]; pdfKey: string }
 export interface LoginFormInput { email: string; password: string }
 export interface UploadFormInput { category: 'product' | 'blog'; file: File | null }
 export interface PatternPdfFormInput { file: File | null }
@@ -83,7 +83,19 @@ export class AdminDashboardPresenter {
 }
 
 function toProductInput(input: ProductFormInput): CreateProductInput {
-  const base = { type: input.type, title: requireText(input.title, 'title'), price: parsePositiveNumber(input.price, 'price'), description: requireText(input.description, 'description'), thumbnailImage: requireText(input.thumbnailImage, 'thumbnail image'), available: input.available }
+  const base = {
+    type: input.type,
+    title: requireText(input.title, 'title'),
+    price: parsePositiveNumber(input.price, 'price'),
+    salePrice: parseOptionalPositiveNumber(input.salePrice, 'sale price'),
+    isSaleItem: input.isSaleItem,
+    description: requireText(input.description, 'description'),
+    thumbnailImage: requireText(input.thumbnailImage, 'thumbnail image'),
+    available: input.available,
+    sizes: input.sizes,
+    tags: parseTags(input.tags),
+    inventoryCount: parseOptionalNonNegativeInteger(input.inventoryCount, 'inventory count'),
+  }
   if (input.type === 'plushie') return { ...base, type: 'plushie', readyToShip: input.readyToShip, colorVariations: normalizeColorVariations(input.colorVariations) }
   const patternInput: PatternProductInput = { ...base, type: 'pattern', pdfKey: requireText(input.pdfKey, 'PDF key') }
   return patternInput
@@ -95,4 +107,7 @@ function toPhotoAsset(result: ProductPhotoUploadResult): UploadedAsset { return 
 function requireText(value: string, label: string): string { const trimmed = value.trim(); if (!trimmed) throw new Error(`${label} is required.`); return trimmed }
 function requireFile(file: File | null, label: string): File { if (!file) throw new Error(`${label} is required.`); return file }
 function parsePositiveNumber(value: string, label: string): number { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${label} must be a positive number.`); return parsed }
+function parseOptionalPositiveNumber(value: string | undefined, label: string): number | undefined { if (!value?.trim()) return undefined; return parsePositiveNumber(value, label) }
+function parseOptionalNonNegativeInteger(value: string | undefined, label: string): number | undefined { if (!value?.trim()) return undefined; const parsed = Number(value); if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${label} must be a non-negative integer.`); return parsed }
+function parseTags(value: string): string[] | undefined { const tags = value.split(',').map((tag) => tag.trim()).filter(Boolean); return tags.length ? tags : undefined }
 function normalizeColorVariations(variations: ProductColorVariation[]): ProductColorVariation[] { return variations.map((variation) => { const imageUrl = variation.imageUrl?.trim(); return imageUrl ? { name: requireText(variation.name, 'color name'), imageUrl } : { name: requireText(variation.name, 'color name') } }) }

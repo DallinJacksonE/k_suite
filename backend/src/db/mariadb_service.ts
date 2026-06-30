@@ -1,10 +1,12 @@
 import mariadb, { type PoolConfig } from 'mariadb';
+import { SESSION_TTL_MS } from '@k_suite/shared';
 import type {
   AdminRecord,
   BlogArticleBlock,
   BlogArticleRecord,
   CookieKind,
   CookieRecord,
+  CheckoutIdempotencyKey,
   CreateBlogArticleInput,
   CreateProductInput,
   GuestRecord,
@@ -16,6 +18,9 @@ import type {
   OrderStatus,
   Product,
   ProductColorVariation,
+  ProductSize,
+  ProductSortDirection,
+  ProductSortKey,
   ProductType,
   UpdateBlogArticleInput,
   UpdateProductInput,
@@ -40,6 +45,9 @@ export type {
   OrderStatus,
   Product,
   ProductColorVariation,
+  ProductSize,
+  ProductSortDirection,
+  ProductSortKey,
   ProductType,
   UpdateBlogArticleInput,
   UpdateProductInput,
@@ -87,6 +95,8 @@ export class MariaDbService implements MariaDbServiceLike {
       CREATE TABLE IF NOT EXISTS guests (
         guest_cookie VARCHAR(255) PRIMARY KEY,
         cart JSON NOT NULL,
+        last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR),
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -98,9 +108,16 @@ export class MariaDbService implements MariaDbServiceLike {
         email VARCHAR(320) NOT NULL,
         kind ENUM('session', 'client', 'admin') NOT NULL,
         time_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR),
         INDEX idx_cookies_email_kind (email, kind)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    await this.pool.query('ALTER TABLE cookies ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER time_created');
+    await this.pool.query(`ALTER TABLE cookies ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
+    await this.pool.query('ALTER TABLE guests ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER cart');
+    await this.pool.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS products (
@@ -108,12 +125,17 @@ export class MariaDbService implements MariaDbServiceLike {
         product_type ENUM('plushie', 'pattern') NOT NULL,
         title VARCHAR(255) NOT NULL DEFAULT '',
         price DECIMAL(10,2) NOT NULL,
+        sale_price DECIMAL(10,2) NULL,
+        is_sale_item BOOLEAN NOT NULL DEFAULT FALSE,
         description TEXT NOT NULL,
         thumbnail_image VARCHAR(1024) NOT NULL,
         available BOOLEAN NOT NULL DEFAULT TRUE,
         ready_to_ship BOOLEAN NULL,
         color_variations JSON NULL,
         pdf_key VARCHAR(1024) NULL,
+        sizes JSON NULL,
+        tags JSON NULL,
+        inventory_count INT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_products_type_available (product_type, available)
@@ -121,24 +143,33 @@ export class MariaDbService implements MariaDbServiceLike {
     `);
 
     await this.pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS title VARCHAR(255) NOT NULL DEFAULT '' AFTER product_type");
+    await this.pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2) NULL AFTER price');
+    await this.pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale_item BOOLEAN NOT NULL DEFAULT FALSE AFTER sale_price');
+    await this.pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS sizes JSON NULL AFTER pdf_key');
+    await this.pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS tags JSON NULL AFTER sizes');
+    await this.pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_count INT NULL AFTER tags');
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS orders (
         order_id CHAR(36) PRIMARY KEY,
+        idempotency_key VARCHAR(255) NULL UNIQUE,
         product_id CHAR(36) NOT NULL,
         client_email VARCHAR(320) NOT NULL,
         details JSON NOT NULL,
         client_instructions TEXT NOT NULL,
         charged_amount DECIMAL(10,2) NOT NULL,
-        status ENUM('pending', 'paid', 'fulfilled', 'cancelled') NOT NULL DEFAULT 'pending',
+        status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_orders_idempotency_key (idempotency_key),
         INDEX idx_orders_client_email (client_email),
         INDEX idx_orders_status (status),
-        CONSTRAINT fk_orders_users_email FOREIGN KEY (client_email) REFERENCES users(email) ON DELETE CASCADE,
         CONSTRAINT fk_orders_products_id FOREIGN KEY (product_id) REFERENCES products(product_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    await this.pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255) NULL UNIQUE AFTER order_id');
+    await this.pool.query("ALTER TABLE orders MODIFY status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending'");
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS blog_articles (
@@ -203,54 +234,71 @@ export class MariaDbService implements MariaDbServiceLike {
 
   async deleteUser(email: string): Promise<void> { await this.pool.query('DELETE FROM users WHERE email = ?', [email]); }
 
-  async upsertCookie(email: string, cookie: string, kind: CookieKind = 'client'): Promise<void> {
+  async upsertCookie(email: string, cookie: string, kind: CookieKind = 'client', expiresAt: Date = new Date(Date.now() + SESSION_TTL_MS)): Promise<void> {
     await this.pool.query(
-      `INSERT INTO cookies (email, cookie, kind) VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE email = VALUES(email), kind = VALUES(kind), time_created = CURRENT_TIMESTAMP`,
-      [email, cookie, kind],
+      `INSERT INTO cookies (email, cookie, kind, last_seen_at, expires_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+       ON DUPLICATE KEY UPDATE email = VALUES(email), kind = VALUES(kind), last_seen_at = CURRENT_TIMESTAMP, expires_at = VALUES(expires_at)`,
+      [email, cookie, kind, expiresAt],
     );
   }
 
   async findCookie(cookie: string): Promise<CookieRecord | null> {
-    const row = await this.firstRow('SELECT * FROM cookies WHERE cookie = ? LIMIT 1', [cookie]);
+    const row = await this.firstRow('SELECT * FROM cookies WHERE cookie = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1', [cookie]);
     return row ? mapCookie(row) : null;
   }
 
   async deleteCookie(cookie: string): Promise<void> { await this.pool.query('DELETE FROM cookies WHERE cookie = ?', [cookie]); }
 
-  async upsertGuestCart(guestCookie: string, cart: unknown[]): Promise<GuestRecord> {
+  async touchCookie(cookie: string, expiresAt: Date): Promise<void> {
+    await this.pool.query('UPDATE cookies SET last_seen_at = CURRENT_TIMESTAMP, expires_at = ? WHERE cookie = ?', [expiresAt, cookie]);
+  }
+
+  async deleteExpiredCookies(now: Date): Promise<void> { await this.pool.query('DELETE FROM cookies WHERE expires_at <= ?', [now]); }
+
+  async upsertGuestCart(guestCookie: string, cart: unknown[], expiresAt: Date = new Date(Date.now() + SESSION_TTL_MS)): Promise<GuestRecord> {
     await this.pool.query(
-      `INSERT INTO guests (guest_cookie, cart) VALUES (?, ?) ON DUPLICATE KEY UPDATE cart = VALUES(cart)`,
-      [guestCookie, stringifyJson(cart)],
+      `INSERT INTO guests (guest_cookie, cart, last_seen_at, expires_at) VALUES (?, ?, CURRENT_TIMESTAMP, ?) ON DUPLICATE KEY UPDATE cart = VALUES(cart), last_seen_at = CURRENT_TIMESTAMP, expires_at = VALUES(expires_at)`,
+      [guestCookie, stringifyJson(cart), expiresAt],
     );
-    return { guestCookie, cart };
+    return { guestCookie, cart, lastSeenAt: new Date(), expiresAt };
   }
 
   async findGuestByCookie(guestCookie: string): Promise<GuestRecord | null> {
-    const row = await this.firstRow('SELECT * FROM guests WHERE guest_cookie = ? LIMIT 1', [guestCookie]);
+    const row = await this.firstRow('SELECT * FROM guests WHERE guest_cookie = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1', [guestCookie]);
     return row ? mapGuest(row) : null;
   }
 
   async deleteGuest(guestCookie: string): Promise<void> { await this.pool.query('DELETE FROM guests WHERE guest_cookie = ?', [guestCookie]); }
 
+  async touchGuest(guestCookie: string, expiresAt: Date): Promise<void> {
+    await this.pool.query('UPDATE guests SET last_seen_at = CURRENT_TIMESTAMP, expires_at = ? WHERE guest_cookie = ?', [expiresAt, guestCookie]);
+  }
+
+  async deleteExpiredGuests(now: Date): Promise<void> { await this.pool.query('DELETE FROM guests WHERE expires_at <= ?', [now]); }
+
   async insertProduct(input: CreateProductInput & { id: string }): Promise<Product> {
     const product = normalizeProduct(input);
     await this.pool.query(
       `INSERT INTO products (
-        product_id, product_type, title, price, description, thumbnail_image, available,
-        ready_to_ship, color_variations, pdf_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        product_id, product_type, title, price, sale_price, is_sale_item, description, thumbnail_image, available,
+        ready_to_ship, color_variations, pdf_key, sizes, tags, inventory_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         product.id,
         product.type,
         product.title,
         product.price,
+        product.salePrice ?? null,
+        product.isSaleItem,
         product.description,
         product.thumbnailImage,
         product.available,
         product.type === 'plushie' ? product.readyToShip : null,
         product.type === 'plushie' ? stringifyJson(product.colorVariations) : null,
         product.type === 'pattern' ? product.pdfKey : null,
+        product.sizes.length ? stringifyJson(product.sizes) : null,
+        product.tags === undefined ? null : stringifyJson(product.tags),
+        product.inventoryCount ?? null,
       ],
     );
     return product;
@@ -261,12 +309,12 @@ export class MariaDbService implements MariaDbServiceLike {
     return row ? mapProduct(row) : null;
   }
 
-  async listProducts(productType?: ProductType, includeUnavailable = false): Promise<Product[]> {
+  async listProducts(productType?: ProductType, includeUnavailable = false, sort: ProductSortKey = 'createdAt', direction: ProductSortDirection = 'desc'): Promise<Product[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (productType) { where.push('product_type = ?'); params.push(productType); }
     if (!includeUnavailable) where.push('available = TRUE');
-    const rows = await this.queryRows(`SELECT * FROM products${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`, params);
+    const rows = await this.queryRows(`SELECT * FROM products${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${productSortColumn(sort)} ${direction === 'asc' ? 'ASC' : 'DESC'}, product_id ASC`, params);
     return rows.map(mapProduct);
   }
 
@@ -275,12 +323,17 @@ export class MariaDbService implements MariaDbServiceLike {
     const params: unknown[] = [];
     addSet(assignments, params, 'title', patch.title);
     addSet(assignments, params, 'price', patch.price);
+    addSet(assignments, params, 'sale_price', patch.salePrice);
+    addSet(assignments, params, 'is_sale_item', patch.isSaleItem);
     addSet(assignments, params, 'description', patch.description);
     addSet(assignments, params, 'thumbnail_image', patch.thumbnailImage);
     addSet(assignments, params, 'available', patch.available);
     addSet(assignments, params, 'ready_to_ship', patch.readyToShip);
     addSet(assignments, params, 'color_variations', patch.colorVariations === undefined ? undefined : stringifyJson(patch.colorVariations));
     addSet(assignments, params, 'pdf_key', patch.pdfKey);
+    addSet(assignments, params, 'sizes', patch.sizes === undefined ? undefined : stringifyJson(patch.sizes));
+    addSet(assignments, params, 'tags', patch.tags === undefined ? undefined : stringifyJson(patch.tags));
+    addSet(assignments, params, 'inventory_count', patch.inventoryCount);
     if (assignments.length) await this.pool.query(`UPDATE products SET ${assignments.join(', ')} WHERE product_id = ?`, [...params, productId]);
     const product = await this.findProductById(productId);
     if (!product) throw new Error(`Product not found: ${productId}`);
@@ -292,6 +345,7 @@ export class MariaDbService implements MariaDbServiceLike {
   async insertOrder(input: InsertOrderInput): Promise<OrderRecord> {
     const order: OrderRecord = {
       orderId: input.orderId,
+      idempotencyKey: input.idempotencyKey,
       productId: input.productId,
       clientEmail: input.clientEmail,
       details: input.details ?? {},
@@ -300,10 +354,15 @@ export class MariaDbService implements MariaDbServiceLike {
       status: input.status ?? 'pending',
     };
     await this.pool.query(
-      `INSERT INTO orders (order_id, product_id, client_email, details, client_instructions, charged_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [order.orderId, order.productId, order.clientEmail, stringifyJson(order.details), order.clientInstructions, order.chargedAmount, order.status],
+      `INSERT INTO orders (order_id, idempotency_key, product_id, client_email, details, client_instructions, charged_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [order.orderId, order.idempotencyKey ?? null, order.productId, order.clientEmail, stringifyJson(order.details), order.clientInstructions, order.chargedAmount, order.status],
     );
     return order;
+  }
+
+  async findOrderByIdempotencyKey(idempotencyKey: CheckoutIdempotencyKey): Promise<OrderRecord | null> {
+    const row = await this.firstRow('SELECT * FROM orders WHERE idempotency_key = ? LIMIT 1', [idempotencyKey]);
+    return row ? mapOrder(row) : null;
   }
 
   async listOrdersForUser(email: string): Promise<OrderRecord[]> {
@@ -386,9 +445,14 @@ function normalizeProduct(input: CreateProductInput & { id: string }): Product {
     type: input.type,
     title: input.title,
     price: input.price,
+    salePrice: input.salePrice,
+    isSaleItem: input.isSaleItem ?? false,
     description: input.description,
     thumbnailImage: input.thumbnailImage,
     available: input.available ?? true,
+    sizes: input.sizes ?? [],
+    tags: input.tags,
+    inventoryCount: input.inventoryCount,
   };
   return input.type === 'plushie'
     ? { ...base, type: 'plushie', readyToShip: input.readyToShip, colorVariations: input.colorVariations }
@@ -400,20 +464,25 @@ function addSet(assignments: string[], params: unknown[], column: string, value:
 }
 function mapAdmin(row: MariaDbRow): AdminRecord { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), createdAt: row.created_at as Date | string | undefined }; }
 function mapUser(row: MariaDbRow): UserRecord { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), cart: parseJsonArray(row.cart), pdfKeys: parseJsonStringArray(row.pdf_keys), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
-function mapCookie(row: MariaDbRow): CookieRecord { return { email: String(row.email), cookie: String(row.cookie), kind: row.kind as CookieKind, timeCreated: row.time_created as Date | string }; }
-function mapGuest(row: MariaDbRow): GuestRecord { return { guestCookie: String(row.guest_cookie), cart: parseJsonArray(row.cart), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
+function mapCookie(row: MariaDbRow): CookieRecord { return { email: String(row.email), cookie: String(row.cookie), kind: row.kind as CookieKind, timeCreated: row.time_created as Date | string, lastSeenAt: row.last_seen_at as Date | string, expiresAt: row.expires_at as Date | string }; }
+function mapGuest(row: MariaDbRow): GuestRecord { return { guestCookie: String(row.guest_cookie), cart: parseJsonArray(row.cart), lastSeenAt: row.last_seen_at as Date | string, expiresAt: row.expires_at as Date | string, createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function mapProduct(row: MariaDbRow): Product {
-  const base = { id: String(row.product_id), type: row.product_type as ProductType, title: String(row.title ?? ''), price: Number(row.price), description: String(row.description), thumbnailImage: String(row.thumbnail_image), available: Boolean(row.available), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined };
+  const base = { id: String(row.product_id), type: row.product_type as ProductType, title: String(row.title ?? ''), price: Number(row.price), salePrice: optionalNumber(row.sale_price), isSaleItem: Boolean(row.is_sale_item), description: String(row.description), thumbnailImage: String(row.thumbnail_image), available: Boolean(row.available), sizes: parseProductSizes(row.sizes), tags: parseOptionalJsonStringArray(row.tags), inventoryCount: optionalNumber(row.inventory_count), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined };
   return base.type === 'plushie'
     ? { ...base, type: 'plushie', readyToShip: Boolean(row.ready_to_ship), colorVariations: parseColorVariations(row.color_variations) }
     : { ...base, type: 'pattern', pdfKey: String(row.pdf_key ?? '') };
 }
-function mapOrder(row: MariaDbRow): OrderRecord { return { orderId: String(row.order_id), productId: String(row.product_id), clientEmail: String(row.client_email), details: parseJsonObject(row.details), clientInstructions: String(row.client_instructions ?? ''), chargedAmount: Number(row.charged_amount), status: row.status as OrderStatus, createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
+function mapOrder(row: MariaDbRow): OrderRecord { return { orderId: String(row.order_id), idempotencyKey: row.idempotency_key === null || row.idempotency_key === undefined ? undefined : String(row.idempotency_key), productId: String(row.product_id), clientEmail: String(row.client_email), details: parseJsonObject(row.details), clientInstructions: String(row.client_instructions ?? ''), chargedAmount: Number(row.charged_amount), status: row.status as OrderStatus, createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function mapBlogArticle(row: MariaDbRow): BlogArticleRecord { return { articleId: String(row.article_id), title: String(row.title), slug: String(row.slug), excerpt: String(row.excerpt), blocks: parseBlogBlocks(row.blocks), published: Boolean(row.published), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function parseBlogBlocks(value: unknown): BlogArticleBlock[] { return parseJsonArray(value) as BlogArticleBlock[]; }
 function stringifyJson(value: unknown): string { return JSON.stringify(value); }
 function parseJsonArray(value: unknown): unknown[] { const parsed = parseJson(value); return Array.isArray(parsed) ? parsed : []; }
 function parseJsonStringArray(value: unknown): string[] { return parseJsonArray(value).map(String); }
+function parseOptionalJsonStringArray(value: unknown): string[] | undefined { if (value === null || value === undefined) return undefined; return parseJsonStringArray(value); }
+function parseProductSizes(value: unknown): ProductSize[] { return parseJsonStringArray(value).filter(isProductSize); }
+function isProductSize(value: string): value is ProductSize { return ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
 function parseColorVariations(value: unknown): ProductColorVariation[] { return parseJsonArray(value).map((item) => { if (typeof item === 'string') return { name: item }; const record = item as Record<string, unknown>; return { name: String(record.name ?? ''), imageUrl: record.imageUrl === undefined ? undefined : String(record.imageUrl) }; }).filter((item) => item.name); }
 function parseJsonObject(value: unknown): Record<string, unknown> { const parsed = parseJson(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; }
 function parseJson(value: unknown): unknown { if (value === null || value === undefined) return null; if (typeof value === 'string') return JSON.parse(value); if (Buffer.isBuffer(value)) return JSON.parse(value.toString('utf8')); return value; }
+function optionalNumber(value: unknown): number | undefined { return value === null || value === undefined ? undefined : Number(value); }
+function productSortColumn(sort: ProductSortKey): string { if (sort === 'price') return 'price'; if (sort === 'title') return 'title'; return 'created_at'; }

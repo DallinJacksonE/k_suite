@@ -51,10 +51,10 @@ test('admin management routes list products and mark orders fulfilled', async ()
     assert.equal(products.response.status, 200);
     assert.equal(products.body.products[0].thumbnailImage, 'http://bucket/bear.png');
 
-    const updated = await request(server, '/admin/orders/o1/status', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: 'admin_cookie=admin-1' }, body: JSON.stringify({ status: 'fulfilled' }) });
+    const updated = await request(server, '/admin/orders/o1/status', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: 'admin_cookie=admin-1' }, body: JSON.stringify({ status: 'shipped' }) });
     assert.equal(updated.response.status, 200);
-    assert.equal(updated.body.order.status, 'fulfilled');
-    assert.deepEqual(calls, [['listAdminProducts', 'admin-1'], ['updateOrderStatus', 'admin-1', 'o1', 'fulfilled']]);
+    assert.equal(updated.body.order.status, 'shipped');
+    assert.deepEqual(calls, [['listAdminProducts', 'admin-1'], ['updateOrderStatus', 'admin-1', 'o1', 'shipped']]);
   } finally {
     server.close();
   }
