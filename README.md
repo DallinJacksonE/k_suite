@@ -34,6 +34,12 @@ Start and wait for all services to become healthy:
 docker compose up -d --wait
 ```
 
+Give the bucket permission to write to its volume:
+
+```sh
+sudo chmod -R 777 ./minio_data
+```
+
 Run other Compose commands directly:
 
 ```sh
@@ -56,11 +62,11 @@ docker compose ps
 
 ## Ports
 
-- Backend API: http://127.0.0.1:5000
-- Client frontend: http://127.0.0.1:5001
-- Admin frontend: http://127.0.0.1:5002
-- MinIO API: http://127.0.0.1:9000
-- MinIO console: http://127.0.0.1:9001
+- Backend API: <http://127.0.0.1:5000>
+- Client frontend: <http://127.0.0.1:5001>
+- Admin frontend: <http://127.0.0.1:5002>
+- MinIO API: <http://127.0.0.1:9000>
+- MinIO console: <http://127.0.0.1:9001>
 
 ## Cleanup
 
