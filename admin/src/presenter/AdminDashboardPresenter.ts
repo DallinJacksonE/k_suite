@@ -72,13 +72,13 @@ export class AdminDashboardPresenter {
   }
   async deletePhoto(input: DeleteObjectInput): Promise<void> { await this.run('Image deleted.', async () => this.service.deletePhoto(input.category, requireText(input.objectKey, 'object key'))) }
   async deletePatternPdf(objectKey: string): Promise<void> { await this.run('Pattern PDF deleted.', async () => this.service.deletePatternPdf(requireText(objectKey, 'object key'))) }
-  async createBlogArticle(input: BlogArticleInput): Promise<void> { await this.run('Blog article created.', async () => { this.view?.setBlogArticles([await this.service.createBlogArticle(normalizeBlogArticle(input))]) ; await this.loadBlogArticles() }) }
+  async createBlogArticle(input: BlogArticleInput): Promise<boolean> { return this.run('Blog article created.', async () => { this.view?.setBlogArticles([await this.service.createBlogArticle(normalizeBlogArticle(input))]) ; await this.loadBlogArticles() }) }
   async updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<void> { await this.run('Blog article updated.', async () => { await this.service.updateBlogArticle(requireText(articleId, 'article id'), input); await this.loadBlogArticles() }) }
   async deleteBlogArticle(articleId: string): Promise<void> { await this.run('Blog article deleted.', async () => { await this.service.deleteBlogArticle(requireText(articleId, 'article id')); await this.loadBlogArticles() }) }
 
-  private async run(successMessage: string, action: () => Promise<void>): Promise<void> {
+  private async run(successMessage: string, action: () => Promise<void>): Promise<boolean> {
     this.view?.setBusy(true); this.view?.setError(null)
-    try { await action(); this.view?.setStatus(successMessage) } catch (error) { this.view?.setError(error instanceof Error ? error.message : 'Unexpected admin action failure.') } finally { this.view?.setBusy(false) }
+    try { await action(); this.view?.setStatus(successMessage); return true } catch (error) { this.view?.setError(error instanceof Error ? error.message : 'Unexpected admin action failure.'); return false } finally { this.view?.setBusy(false) }
   }
 }
 

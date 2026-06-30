@@ -3,7 +3,11 @@
   min-height: 100vh;
   padding: 40px;
   color: var(--text);
-  background: radial-gradient(circle at top left, rgba(214, 182, 255, 0.28), transparent 30rem), var(--bg);
+  background: radial-gradient(circle at top left, var(--hero-glow), transparent 30rem), var(--bg);
+}
+
+.admin-shell h1 {
+  color: var(--button-text)
 }
 
 .login-shell {
@@ -125,14 +129,15 @@
 }
 
 .status-message {
-  border-color: rgba(59, 130, 246, 0.25);
-  background: rgba(59, 130, 246, 0.08);
+  color: var(--status-text);
+  border-color: var(--status-border);
+  background: var(--status-bg);
 }
 
 .error-message {
-  color: #991b1b;
-  border-color: rgba(220, 38, 38, 0.25);
-  background: rgba(220, 38, 38, 0.08);
+  color: var(--error-text);
+  border-color: var(--error-border);
+  background: var(--error-bg);
 }
 
 .two-column,
@@ -173,6 +178,7 @@ label {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: fit-content;
 }
 
 input,
@@ -198,7 +204,7 @@ button {
   border: 0;
   border-radius: 999px;
   padding: 10px 16px;
-  color: white;
+  color: var(--button-text);
   background: var(--accent);
   cursor: pointer;
 }
@@ -209,7 +215,7 @@ button:disabled {
 }
 
 .danger-button {
-  background: #dc2626;
+  background: var(--danger);
 }
 
 .button-row {

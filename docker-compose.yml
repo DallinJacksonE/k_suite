@@ -12,6 +12,7 @@ services:
       MARIADB_USER: k_suite
       MARIADB_PASSWORD: k_suite_password
       MINIO_ENDPOINT: http://bucket:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
       MINIO_PUBLIC_BUCKET: public-assets
       MINIO_PRIVATE_BUCKET: private-patterns
       MINIO_ACCESS_KEY: k_suite_minio
@@ -105,7 +106,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - ./minio_data:/data
     healthcheck:
       test: ["CMD", "/usr/bin/mc", "ready", "local"]
       interval: 10s
@@ -116,4 +117,3 @@ services:
 
 volumes:
   mariadb_data:
-  minio_data:

@@ -31,12 +31,14 @@ export class MinIoBucketService {
         await this.client.removeObject(this.config.privateBucket, key);
     }
     publicUrl(key) {
-        return `${this.config.endpoint.replace(/\/$/, '')}/${this.config.publicBucket}/${key}`;
+        const endpoint = this.config.publicEndpoint ?? 'http://localhost:9000';
+        return `${endpoint.replace(/\/$/, '')}/${this.config.publicBucket}/${key}`;
     }
 }
 export function createMinIoBucketService(env = process.env) {
     return new MinIoBucketService({
         endpoint: env.MINIO_ENDPOINT ?? 'http://bucket:9000',
+        publicEndpoint: env.MINIO_PUBLIC_ENDPOINT ?? 'http://localhost:9000',
         accessKey: env.MINIO_ACCESS_KEY ?? 'k_suite_minio',
         secretKey: env.MINIO_SECRET_KEY ?? 'k_suite_minio_password',
         publicBucket: env.MINIO_PUBLIC_BUCKET ?? 'public-assets',
