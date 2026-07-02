@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@fontsource/libertinus-serif';
 import '@k_suite/shared/toast.css'
 import './index.css'
 import './components/layout/ClientShell.css'

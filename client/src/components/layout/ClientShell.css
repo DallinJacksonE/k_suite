@@ -39,7 +39,6 @@
 
 .client-shell__nav a,
 .client-shell__nav button {
-  border: 1px solid var(--button-secondary-border);
   border-radius: var(--button-radius);
   padding: var(--nav-link-padding);
   color: var(--button-secondary-text);

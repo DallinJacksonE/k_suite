@@ -17,8 +17,8 @@ export function LoginView() {
   const presenter = useMemo(() => new AuthPresenter(service, {
     renderAuth: (nextModel) => {
       setModel(nextModel)
-      if (nextModel.error) showToast({ message: nextModel.error, variant: 'danger', durationMs: 6_000 })
-      if (nextModel.message) showToast({ message: nextModel.message, variant: nextModel.busy ? 'info' : 'success' })
+      if (nextModel.error) showToast({ message: nextModel.error, variant: 'danger', durationMs: 3_000 })
+      if (nextModel.message) showToast({ message: nextModel.message, variant: nextModel.busy ? 'info' : 'success', durationMs: 3000 })
     },
     onAuthenticated: () => {
       void refreshSession().then(() => navigate('/profile'))

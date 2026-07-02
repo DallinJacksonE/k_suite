@@ -16,8 +16,8 @@ export function ProfileInfoForm({ user, saving, onSave }: Props) {
 
   return (
     <form className="profile-panel" onSubmit={submit}>
-      <h2>Profile details</h2>
-      <label>Name<input name="name" defaultValue={user.name} /></label>
+      <h2>Edit Profile details</h2>
+      <label>Name: <input name="name" defaultValue={user.name} /></label>
       <label className="inline"><input name="emailNotificationsEnabled" type="checkbox" defaultChecked={user.emailNotificationsEnabled !== false} /> Email notifications</label>
       <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>
     </form>

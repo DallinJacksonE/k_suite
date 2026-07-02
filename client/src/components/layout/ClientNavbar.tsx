@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useClientSession } from '../auth/useClientSession'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faCartShopping } from '@fortawesome/free-solid-svg-icons'
 
 const navigationLinks = [
-  { to: '/', label: 'Home' },
-  { to: '/shop', label: 'Shop' },
-  { to: '/markets', label: 'Markets' },
+  { to: '/shop', label: 'Plushies' },
   { to: '/blog', label: 'Blog' },
+  { to: '/markets', label: 'Markets' },
   { to: '/cart', label: 'Cart' },
 ]
 
@@ -14,7 +15,6 @@ export function ClientNavbar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
   const { session, canViewProfile, logout } = useClientSession()
-  const cartCount = session.status === 'authenticated' ? session.user.cart.length : 0
   const profileTarget = canViewProfile ? '/profile' : '/login'
   const profileLabel = canViewProfile ? 'Profile' : 'Login / Register'
   const loggedIn = session.status === 'authenticated'
@@ -28,7 +28,7 @@ export function ClientNavbar() {
   return (
     <header className="client-shell__header">
       <NavLink className="client-shell__brand" to="/" onClick={() => setMenuOpen(false)}>
-        Kaylie&apos;s Suite
+        Kaylie&apos;s Creations
       </NavLink>
       <button
         className="client-shell__menu-button"
@@ -46,7 +46,7 @@ export function ClientNavbar() {
       >
         {navigationLinks.map((link) => (
           <NavLink key={link.to} to={link.to} onClick={() => setMenuOpen(false)}>
-            {link.label === 'Cart' ? `Cart (${cartCount})` : link.label}
+            {link.label === 'Cart' ? <FontAwesomeIcon icon={faCartShopping} /> : link.label}
           </NavLink>
         ))}
         <NavLink to={profileTarget} onClick={() => setMenuOpen(false)}>

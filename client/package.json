@@ -12,6 +12,11 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@fontsource/libertinus-serif": "^5.2.1",
+    "@fortawesome/fontawesome-svg-core": "^7.3.0",
+    "@fortawesome/free-regular-svg-icons": "^7.3.0",
+    "@fortawesome/free-solid-svg-icons": "^7.3.0",
+    "@fortawesome/react-fontawesome": "^3.3.1",
     "@k_suite/shared": "file:../shared",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.7",
