@@ -47,6 +47,11 @@ test('docs route lists every mounted backend endpoint', async () => {
       'POST /api/admin/blog/articles',
       'PATCH /api/admin/blog/articles/:articleId',
       'DELETE /api/admin/blog/articles/:articleId',
+      'GET /api/admin/markets',
+      'POST /api/admin/markets',
+      'PATCH /api/admin/markets/:eventId',
+      'DELETE /api/admin/markets/:eventId',
+      'GET /api/blog/articles',
       'GET /api/shop/plushies',
       'POST /api/shop/plushies',
       'DELETE /api/shop/plushies',
@@ -67,6 +72,10 @@ test('docs route lists every mounted backend endpoint', async () => {
       'GET /api/user/profile',
       'POST /api/user/profile',
       'DELETE /api/user/profile',
+      'GET /api/user/purchased-patterns',
+      'POST /api/user/purchased-patterns/:productId/download',
+      'GET /api/markets',
+      'GET /api/markets/next',
     ]);
 
     const adminOrders = docs.body.endpoints.find((endpoint) => endpoint.path === '/api/admin/orders');

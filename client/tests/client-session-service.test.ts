@@ -35,16 +35,36 @@ test('client API service uses cookie credentials for session auth methods', asyn
   assert.equal(login.status, 'authenticated')
   assert.equal(registered.status, 'authenticated')
   assert.equal(profile.user.email, 'a@example.com')
-  assert.deepEqual(calls.map((call) => [call.url, call.init.method ?? 'GET', call.init.credentials]), [
-    ['/api/user/session', 'GET', 'include'],
-    ['/api/user/csrf', 'GET', 'include'],
-    ['/api/user/login', 'POST', 'include'],
-    ['/api/user/csrf', 'GET', 'include'],
-    ['/api/user/auth', 'POST', 'include'],
-    ['/api/user/profile', 'GET', 'include'],
-    ['/api/user/logout', 'POST', 'include'],
+  assert.deepEqual(calls.map((call) => [call.url, call.init.method ?? 'GET', call.init.credentials, call.init.cache]), [
+    ['/api/user/session', 'GET', 'include', 'no-store'],
+    ['/api/user/csrf', 'GET', 'include', 'no-store'],
+    ['/api/user/login', 'POST', 'include', 'no-store'],
+    ['/api/user/csrf', 'GET', 'include', 'no-store'],
+    ['/api/user/auth', 'POST', 'include', 'no-store'],
+    ['/api/user/profile', 'GET', 'include', 'no-store'],
+    ['/api/user/logout', 'POST', 'include', 'no-store'],
   ])
-  assert.equal((calls[2].init.headers as Record<string, string>)['x-csrf-token'], 'csrf-1')
+  assert.equal(new Headers(calls[2].init.headers).get('x-csrf-token'), 'csrf-1')
+  assert.equal(new Headers(calls[0].init.headers).get('cache-control'), 'no-store')
+})
+
+test('client API service default fetcher calls fetch with the global object receiver', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+  try {
+    globalThis.fetch = async function (this: typeof globalThis, input) {
+      assert.equal(this, globalThis)
+      calls.push(String(input))
+      return jsonResponse({ status: 'guest' })
+    } as typeof fetch
+
+    const service = new FetchClientApiService('/api')
+    await service.getSession()
+
+    assert.deepEqual(calls, ['/api/user/session'])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('client API service maps backend rate limits to readable errors', async () => {

@@ -1,4 +1,4 @@
-import type { AdminApiService, ApiEndpointDoc, BlogArticleInput, BlogArticleRecord, BlogBlock, CreateProductInput, OrderRecord, PatternProductInput, ProductColorVariation, ProductPhotoUploadResult, ProductRecord, ProductSize, ProductType, ServiceHealthReport, UpdateProductInput } from '../service/AdminApiService'
+import type { AdminApiService, ApiEndpointDoc, BlogArticleInput, BlogArticleRecord, BlogBlock, CreateProductInput, MarketEventInput, MarketEventRecord, OrderRecord, PatternProductInput, ProductColorVariation, ProductPhotoUploadResult, ProductRecord, ProductSize, ProductType, ServiceHealthReport, UpdateProductInput } from '../service/AdminApiService'
 
 export interface ProductFormInput { type: ProductType; title: string; price: string; salePrice?: string; isSaleItem: boolean; description: string; thumbnailImage: string; available: boolean; readyToShip: boolean; sizes: ProductSize[]; tags: string; inventoryCount?: string; colorVariations: ProductColorVariation[]; pdfKey: string }
 export interface LoginFormInput { email: string; password: string }
@@ -18,6 +18,7 @@ export interface AdminDashboardView {
   setOrders(orders: OrderRecord[]): void
   setProducts(products: ProductRecord[]): void
   setBlogArticles(articles: BlogArticleRecord[]): void
+  setMarketEvents(events: MarketEventRecord[]): void
   setServiceHealth(health: ServiceHealthReport): void
   addCreatedProduct(product: ProductRecord): void
   addUploadedAsset(asset: UploadedAsset): void
@@ -44,7 +45,7 @@ export class AdminDashboardPresenter {
       const result = await this.service.login({ email: requireText(input.email, 'email'), password: requireText(input.password, 'password') })
       this.view?.setAdminName(result.admin.name)
       this.view?.setAuthenticated(true)
-      await Promise.all([this.loadOrders(), this.loadProducts(), this.loadBlogArticles(), this.loadServiceHealth()])
+      await Promise.all([this.loadOrders(), this.loadProducts(), this.loadBlogArticles(), this.loadMarketEvents(), this.loadServiceHealth()])
     })
   }
 
@@ -53,6 +54,7 @@ export class AdminDashboardPresenter {
   async markOrderShipped(orderId: string): Promise<void> { await this.run('Order marked shipped.', async () => { const updated = await this.service.markOrderShipped(requireText(orderId, 'order id')); this.view?.setOrders([updated, ...(await this.service.listOrders()).filter((order) => order.orderId !== updated.orderId)]) }) }
   async loadProducts(): Promise<void> { await this.run('Products loaded.', async () => this.view?.setProducts(await this.service.listProducts())) }
   async loadBlogArticles(): Promise<void> { await this.run('Blog articles loaded.', async () => this.view?.setBlogArticles(await this.service.listBlogArticles())) }
+  async loadMarketEvents(): Promise<void> { await this.run('Market dates loaded.', async () => this.view?.setMarketEvents(await this.service.listMarketEvents())) }
   async loadServiceHealth(): Promise<void> { await this.run('Service health loaded.', async () => this.view?.setServiceHealth(await this.service.loadServiceHealth())) }
 
   async createProduct(input: ProductFormInput): Promise<void> { await this.run('Product created.', async () => this.view?.addCreatedProduct(await this.service.createProduct(toProductInput(input)))) }
@@ -75,6 +77,9 @@ export class AdminDashboardPresenter {
   async createBlogArticle(input: BlogArticleInput): Promise<boolean> { return this.run('Blog article created.', async () => { this.view?.setBlogArticles([await this.service.createBlogArticle(normalizeBlogArticle(input))]) ; await this.loadBlogArticles() }) }
   async updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<void> { await this.run('Blog article updated.', async () => { await this.service.updateBlogArticle(requireText(articleId, 'article id'), input); await this.loadBlogArticles() }) }
   async deleteBlogArticle(articleId: string): Promise<void> { await this.run('Blog article deleted.', async () => { await this.service.deleteBlogArticle(requireText(articleId, 'article id')); await this.loadBlogArticles() }) }
+  async createMarketEvent(input: MarketEventInput): Promise<boolean> { return this.run('Market date created.', async () => { await this.service.createMarketEvent(normalizeMarketEvent(input)); await this.loadMarketEvents() }) }
+  async updateMarketEvent(eventId: string, input: Partial<MarketEventInput>): Promise<void> { await this.run('Market date updated.', async () => { await this.service.updateMarketEvent(requireText(eventId, 'market event id'), normalizeMarketEventPatch(input)); await this.loadMarketEvents() }) }
+  async deleteMarketEvent(eventId: string): Promise<void> { await this.run('Market date deleted.', async () => { await this.service.deleteMarketEvent(requireText(eventId, 'market event id')); await this.loadMarketEvents() }) }
 
   private async run(successMessage: string, action: () => Promise<void>): Promise<boolean> {
     this.view?.setBusy(true); this.view?.setError(null)
@@ -102,9 +107,12 @@ function toProductInput(input: ProductFormInput): CreateProductInput {
 }
 function normalizeBlogArticle(input: BlogArticleInput): BlogArticleInput { return { ...input, title: requireText(input.title, 'title'), slug: requireText(input.slug, 'slug'), excerpt: requireText(input.excerpt, 'excerpt'), blocks: input.blocks.map(normalizeBlogBlock) } }
 function normalizeBlogBlock(block: BlogBlock): BlogBlock { if (block.type === 'youtube') return { ...block, videoId: normalizeYoutubeVideoId(block.videoId) }; return block }
+function normalizeMarketEvent(input: MarketEventInput): MarketEventInput { return { ...input, title: requireText(input.title, 'title'), location: requireText(input.location, 'location'), startsAt: requireDate(input.startsAt, 'date and time') } }
+function normalizeMarketEventPatch(input: Partial<MarketEventInput>): Partial<MarketEventInput> { return { ...input, title: input.title === undefined ? undefined : requireText(input.title, 'title'), location: input.location === undefined ? undefined : requireText(input.location, 'location'), startsAt: input.startsAt === undefined ? undefined : requireDate(input.startsAt, 'date and time') } }
 export function normalizeYoutubeVideoId(value: string): string { const trimmed = requireText(value, 'YouTube video'); const match = trimmed.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{6,})/); return match?.[1] ?? trimmed }
 function toPhotoAsset(result: ProductPhotoUploadResult): UploadedAsset { return { label: 'Public image', key: result.key, url: result.publicUrl } }
 function requireText(value: string, label: string): string { const trimmed = value.trim(); if (!trimmed) throw new Error(`${label} is required.`); return trimmed }
+function requireDate(value: string, label: string): string { const trimmed = requireText(value, label); if (Number.isNaN(new Date(trimmed).getTime())) throw new Error(`${label} must be a valid date.`); return trimmed }
 function requireFile(file: File | null, label: string): File { if (!file) throw new Error(`${label} is required.`); return file }
 function parsePositiveNumber(value: string, label: string): number { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${label} must be a positive number.`); return parsed }
 function parseOptionalPositiveNumber(value: string | undefined, label: string): number | undefined { if (!value?.trim()) return undefined; return parsePositiveNumber(value, label) }

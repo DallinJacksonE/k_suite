@@ -8,12 +8,15 @@ import type {
   CookieRecord,
   CheckoutIdempotencyKey,
   CreateBlogArticleInput,
+  CreateMarketEventInput,
   CreateProductInput,
   GuestRecord,
   InsertAdminInput,
   InsertOrderInput,
+  InsertPurchasedPatternInput,
   InsertUserInput,
   MariaDbServiceLike,
+  MarketEvent,
   OrderRecord,
   OrderStatus,
   Product,
@@ -22,7 +25,9 @@ import type {
   ProductSortDirection,
   ProductSortKey,
   ProductType,
+  PurchasedPatternRecord,
   UpdateBlogArticleInput,
+  UpdateMarketEventInput,
   UpdateProductInput,
   UserPatch,
   UserRecord,
@@ -41,6 +46,7 @@ export type {
   InsertOrderInput,
   InsertUserInput,
   MariaDbServiceLike,
+  MarketEvent,
   OrderRecord,
   OrderStatus,
   Product,
@@ -86,6 +92,9 @@ export class MariaDbService implements MariaDbServiceLike {
         salt VARCHAR(255) NOT NULL,
         cart JSON NOT NULL,
         pdf_keys JSON NOT NULL,
+        shipping_address JSON NULL,
+        billing_address JSON NULL,
+        email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -118,6 +127,9 @@ export class MariaDbService implements MariaDbServiceLike {
     await this.pool.query(`ALTER TABLE cookies ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
     await this.pool.query('ALTER TABLE guests ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER cart');
     await this.pool.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
+    await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS shipping_address JSON NULL AFTER pdf_keys');
+    await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_address JSON NULL AFTER shipping_address');
+    await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE AFTER billing_address');
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS products (
@@ -172,6 +184,20 @@ export class MariaDbService implements MariaDbServiceLike {
     await this.pool.query("ALTER TABLE orders MODIFY status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending'");
 
     await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS purchased_patterns (
+        user_email VARCHAR(320) NOT NULL,
+        product_id CHAR(36) NOT NULL,
+        order_id CHAR(36) NOT NULL,
+        pdf_key VARCHAR(1024) NOT NULL,
+        purchased_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_email, product_id, order_id),
+        INDEX idx_purchased_patterns_user (user_email),
+        INDEX idx_purchased_patterns_product (product_id),
+        CONSTRAINT fk_purchased_patterns_products_id FOREIGN KEY (product_id) REFERENCES products(product_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS blog_articles (
         article_id CHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -183,6 +209,21 @@ export class MariaDbService implements MariaDbServiceLike {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_blog_articles_published (published),
         INDEX idx_blog_articles_slug (slug)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS market_events (
+        event_id CHAR(36) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        location VARCHAR(255) NOT NULL,
+        starts_at TIMESTAMP NOT NULL,
+        ends_at TIMESTAMP NULL,
+        description TEXT NULL,
+        external_url VARCHAR(1024) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_market_events_starts_at (starts_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   }
@@ -226,6 +267,9 @@ export class MariaDbService implements MariaDbServiceLike {
     addSet(assignments, params, 'salt', patch.salt);
     addSet(assignments, params, 'cart', patch.cart === undefined ? undefined : stringifyJson(patch.cart));
     addSet(assignments, params, 'pdf_keys', patch.pdfKeys === undefined ? undefined : stringifyJson(patch.pdfKeys));
+    addSet(assignments, params, 'shipping_address', patch.addressBook?.shippingAddress === undefined ? undefined : stringifyJson(patch.addressBook.shippingAddress));
+    addSet(assignments, params, 'billing_address', patch.addressBook?.billingAddress === undefined ? undefined : stringifyJson(patch.addressBook.billingAddress));
+    addSet(assignments, params, 'email_notifications_enabled', patch.emailNotificationsEnabled);
     if (assignments.length) await this.pool.query(`UPDATE users SET ${assignments.join(', ')} WHERE email = ?`, [...params, email]);
     const user = await this.findUserByEmail(email);
     if (!user) throw new Error(`User not found: ${email}`);
@@ -365,6 +409,24 @@ export class MariaDbService implements MariaDbServiceLike {
     return row ? mapOrder(row) : null;
   }
 
+  async insertPurchasedPattern(input: InsertPurchasedPatternInput): Promise<PurchasedPatternRecord> {
+    await this.pool.query(
+      `INSERT INTO purchased_patterns (user_email, product_id, order_id, pdf_key) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE pdf_key = VALUES(pdf_key)`,
+      [input.userEmail, input.productId, input.orderId, input.pdfKey],
+    );
+    return { ...input, purchasedAt: new Date() };
+  }
+
+  async listPurchasedPatternsForUser(email: string): Promise<PurchasedPatternRecord[]> {
+    return (await this.queryRows('SELECT * FROM purchased_patterns WHERE user_email = ? ORDER BY purchased_at DESC', [email])).map(mapPurchasedPattern);
+  }
+
+  async findPurchasedPatternForUser(email: string, productId: string): Promise<PurchasedPatternRecord | null> {
+    const row = await this.firstRow('SELECT * FROM purchased_patterns WHERE user_email = ? AND product_id = ? ORDER BY purchased_at DESC LIMIT 1', [email, productId]);
+    return row ? mapPurchasedPattern(row) : null;
+  }
+
   async listOrdersForUser(email: string): Promise<OrderRecord[]> {
     return (await this.queryRows('SELECT * FROM orders WHERE client_email = ? ORDER BY created_at DESC', [email])).map(mapOrder);
   }
@@ -378,6 +440,44 @@ export class MariaDbService implements MariaDbServiceLike {
     const row = await this.firstRow('SELECT * FROM orders WHERE order_id = ? LIMIT 1', [orderId]);
     if (!row) throw new Error(`Order not found: ${orderId}`);
     return mapOrder(row);
+  }
+
+  async listMarketEvents(now: Date = new Date()): Promise<MarketEvent[]> {
+    return (await this.queryRows('SELECT * FROM market_events WHERE starts_at >= ? ORDER BY starts_at ASC', [now])).map(mapMarketEvent);
+  }
+
+  async getNextMarketEvent(now: Date = new Date()): Promise<MarketEvent | null> {
+    const row = await this.firstRow('SELECT * FROM market_events WHERE starts_at >= ? ORDER BY starts_at ASC LIMIT 1', [now]);
+    return row ? mapMarketEvent(row) : null;
+  }
+
+  async insertMarketEvent(input: CreateMarketEventInput & { id: string }): Promise<MarketEvent> {
+    await this.pool.query(
+      `INSERT INTO market_events (event_id, title, location, starts_at, ends_at, description, external_url) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [input.id, input.title, input.location, input.startsAt, input.endsAt ?? null, input.description ?? null, input.externalUrl ?? null],
+    );
+    const event = await this.findMarketEventById(input.id);
+    if (!event) throw new Error(`Market event not found: ${input.id}`);
+    return event;
+  }
+
+  async updateMarketEvent(eventId: string, patch: UpdateMarketEventInput): Promise<MarketEvent> {
+    const assignments: string[] = [];
+    const params: unknown[] = [];
+    addSet(assignments, params, 'title', patch.title);
+    addSet(assignments, params, 'location', patch.location);
+    addSet(assignments, params, 'starts_at', patch.startsAt);
+    addSet(assignments, params, 'ends_at', patch.endsAt);
+    addSet(assignments, params, 'description', patch.description);
+    addSet(assignments, params, 'external_url', patch.externalUrl);
+    if (assignments.length) await this.pool.query(`UPDATE market_events SET ${assignments.join(', ')} WHERE event_id = ?`, [...params, eventId]);
+    const event = await this.findMarketEventById(eventId);
+    if (!event) throw new Error(`Market event not found: ${eventId}`);
+    return event;
+  }
+
+  async deleteMarketEvent(eventId: string): Promise<void> {
+    await this.pool.query('DELETE FROM market_events WHERE event_id = ?', [eventId]);
   }
 
   async listBlogArticles(): Promise<BlogArticleRecord[]> {
@@ -415,6 +515,11 @@ export class MariaDbService implements MariaDbServiceLike {
   private async findBlogArticleById(articleId: string): Promise<BlogArticleRecord | null> {
     const row = await this.firstRow('SELECT * FROM blog_articles WHERE article_id = ? LIMIT 1', [articleId]);
     return row ? mapBlogArticle(row) : null;
+  }
+
+  private async findMarketEventById(eventId: string): Promise<MarketEvent | null> {
+    const row = await this.firstRow('SELECT * FROM market_events WHERE event_id = ? LIMIT 1', [eventId]);
+    return row ? mapMarketEvent(row) : null;
   }
 
   private async firstRow(sql: string, params: unknown[] = []): Promise<MariaDbRow | null> {
@@ -463,7 +568,7 @@ function addSet(assignments: string[], params: unknown[], column: string, value:
   if (value !== undefined) { assignments.push(`${column} = ?`); params.push(value); }
 }
 function mapAdmin(row: MariaDbRow): AdminRecord { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), createdAt: row.created_at as Date | string | undefined }; }
-function mapUser(row: MariaDbRow): UserRecord { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), cart: parseJsonArray(row.cart), pdfKeys: parseJsonStringArray(row.pdf_keys), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
+function mapUser(row: MariaDbRow): UserRecord { const addressBook = { shippingAddress: parseOptionalJsonObject(row.shipping_address), billingAddress: parseOptionalJsonObject(row.billing_address) } as UserRecord['addressBook']; return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), cart: parseJsonArray(row.cart), pdfKeys: parseJsonStringArray(row.pdf_keys), addressBook: addressBook?.shippingAddress || addressBook?.billingAddress ? addressBook : undefined, emailNotificationsEnabled: row.email_notifications_enabled === undefined ? undefined : Boolean(row.email_notifications_enabled), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function mapCookie(row: MariaDbRow): CookieRecord { return { email: String(row.email), cookie: String(row.cookie), kind: row.kind as CookieKind, timeCreated: row.time_created as Date | string, lastSeenAt: row.last_seen_at as Date | string, expiresAt: row.expires_at as Date | string }; }
 function mapGuest(row: MariaDbRow): GuestRecord { return { guestCookie: String(row.guest_cookie), cart: parseJsonArray(row.cart), lastSeenAt: row.last_seen_at as Date | string, expiresAt: row.expires_at as Date | string, createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function mapProduct(row: MariaDbRow): Product {
@@ -473,6 +578,8 @@ function mapProduct(row: MariaDbRow): Product {
     : { ...base, type: 'pattern', pdfKey: String(row.pdf_key ?? '') };
 }
 function mapOrder(row: MariaDbRow): OrderRecord { return { orderId: String(row.order_id), idempotencyKey: row.idempotency_key === null || row.idempotency_key === undefined ? undefined : String(row.idempotency_key), productId: String(row.product_id), clientEmail: String(row.client_email), details: parseJsonObject(row.details), clientInstructions: String(row.client_instructions ?? ''), chargedAmount: Number(row.charged_amount), status: row.status as OrderStatus, createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
+function mapPurchasedPattern(row: MariaDbRow): PurchasedPatternRecord { return { userEmail: String(row.user_email), productId: String(row.product_id), orderId: String(row.order_id), pdfKey: String(row.pdf_key), purchasedAt: row.purchased_at as Date | string | undefined }; }
+function mapMarketEvent(row: MariaDbRow): MarketEvent { return { id: String(row.event_id), title: String(row.title), location: String(row.location), startsAt: row.starts_at as Date | string, endsAt: row.ends_at as Date | string | undefined, description: row.description === null || row.description === undefined ? undefined : String(row.description), externalUrl: row.external_url === null || row.external_url === undefined ? undefined : String(row.external_url) }; }
 function mapBlogArticle(row: MariaDbRow): BlogArticleRecord { return { articleId: String(row.article_id), title: String(row.title), slug: String(row.slug), excerpt: String(row.excerpt), blocks: parseBlogBlocks(row.blocks), published: Boolean(row.published), createdAt: row.created_at as Date | string | undefined, updatedAt: row.updated_at as Date | string | undefined }; }
 function parseBlogBlocks(value: unknown): BlogArticleBlock[] { return parseJsonArray(value) as BlogArticleBlock[]; }
 function stringifyJson(value: unknown): string { return JSON.stringify(value); }
@@ -483,6 +590,7 @@ function parseProductSizes(value: unknown): ProductSize[] { return parseJsonStri
 function isProductSize(value: string): value is ProductSize { return ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
 function parseColorVariations(value: unknown): ProductColorVariation[] { return parseJsonArray(value).map((item) => { if (typeof item === 'string') return { name: item }; const record = item as Record<string, unknown>; return { name: String(record.name ?? ''), imageUrl: record.imageUrl === undefined ? undefined : String(record.imageUrl) }; }).filter((item) => item.name); }
 function parseJsonObject(value: unknown): Record<string, unknown> { const parsed = parseJson(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; }
+function parseOptionalJsonObject(value: unknown): Record<string, unknown> | undefined { if (value === null || value === undefined) return undefined; return parseJsonObject(value); }
 function parseJson(value: unknown): unknown { if (value === null || value === undefined) return null; if (typeof value === 'string') return JSON.parse(value); if (Buffer.isBuffer(value)) return JSON.parse(value.toString('utf8')); return value; }
 function optionalNumber(value: unknown): number | undefined { return value === null || value === undefined ? undefined : Number(value); }
 function productSortColumn(sort: ProductSortKey): string { if (sort === 'price') return 'price'; if (sort === 'title') return 'title'; return 'created_at'; }

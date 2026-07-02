@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { FetchClientApiService, type ClientApiService } from '../../service/ClientApiService'
+import type { ClientApiService } from '../../service/ClientApiService'
 import type { ClientSessionState, LoginInput, RegisterInput } from '../../service/ClientTypes'
+import { defaultClientApiService } from '../../service/defaultClientApiService'
 import { ClientSessionContext, type ClientSessionContextValue } from './ClientSessionContext'
 
 interface ClientSessionProviderProps {
@@ -8,7 +9,7 @@ interface ClientSessionProviderProps {
   service?: ClientApiService
 }
 
-export function ClientSessionProvider({ children, service = new FetchClientApiService() }: ClientSessionProviderProps) {
+export function ClientSessionProvider({ children, service = defaultClientApiService }: ClientSessionProviderProps) {
   const [session, setSession] = useState<ClientSessionState>({ status: 'loading' })
   const [loading, setLoading] = useState(true)
 
@@ -54,6 +55,10 @@ export function ClientSessionProvider({ children, service = new FetchClientApiSe
     service.getSession()
       .then((nextSession) => {
         if (!cancelled) setSession(nextSession)
+      })
+      .catch((error: unknown) => {
+        console.error('Unable to load client session.', error)
+        if (!cancelled) setSession({ status: 'guest' })
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

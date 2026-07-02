@@ -25,5 +25,5 @@ export function CartItemRow({ item, onQuantityChange }: CartItemRowProps) {
 }
 
 function formatPrice(value: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value / 100)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
 }

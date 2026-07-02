@@ -23,6 +23,9 @@ export class MariaDbService {
         salt VARCHAR(255) NOT NULL,
         cart JSON NOT NULL,
         pdf_keys JSON NOT NULL,
+        shipping_address JSON NULL,
+        billing_address JSON NULL,
+        email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -52,6 +55,9 @@ export class MariaDbService {
         await this.pool.query(`ALTER TABLE cookies ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
         await this.pool.query('ALTER TABLE guests ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER cart');
         await this.pool.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL 2 HOUR) AFTER last_seen_at`);
+        await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS shipping_address JSON NULL AFTER pdf_keys');
+        await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_address JSON NULL AFTER shipping_address');
+        await this.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE AFTER billing_address');
         await this.pool.query(`
       CREATE TABLE IF NOT EXISTS products (
         product_id CHAR(36) PRIMARY KEY,
@@ -101,6 +107,19 @@ export class MariaDbService {
         await this.pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255) NULL UNIQUE AFTER order_id');
         await this.pool.query("ALTER TABLE orders MODIFY status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending'");
         await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS purchased_patterns (
+        user_email VARCHAR(320) NOT NULL,
+        product_id CHAR(36) NOT NULL,
+        order_id CHAR(36) NOT NULL,
+        pdf_key VARCHAR(1024) NOT NULL,
+        purchased_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_email, product_id, order_id),
+        INDEX idx_purchased_patterns_user (user_email),
+        INDEX idx_purchased_patterns_product (product_id),
+        CONSTRAINT fk_purchased_patterns_products_id FOREIGN KEY (product_id) REFERENCES products(product_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+        await this.pool.query(`
       CREATE TABLE IF NOT EXISTS blog_articles (
         article_id CHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -112,6 +131,20 @@ export class MariaDbService {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_blog_articles_published (published),
         INDEX idx_blog_articles_slug (slug)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+        await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS market_events (
+        event_id CHAR(36) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        location VARCHAR(255) NOT NULL,
+        starts_at TIMESTAMP NOT NULL,
+        ends_at TIMESTAMP NULL,
+        description TEXT NULL,
+        external_url VARCHAR(1024) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_market_events_starts_at (starts_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
     }
@@ -143,6 +176,9 @@ export class MariaDbService {
         addSet(assignments, params, 'salt', patch.salt);
         addSet(assignments, params, 'cart', patch.cart === undefined ? undefined : stringifyJson(patch.cart));
         addSet(assignments, params, 'pdf_keys', patch.pdfKeys === undefined ? undefined : stringifyJson(patch.pdfKeys));
+        addSet(assignments, params, 'shipping_address', patch.addressBook?.shippingAddress === undefined ? undefined : stringifyJson(patch.addressBook.shippingAddress));
+        addSet(assignments, params, 'billing_address', patch.addressBook?.billingAddress === undefined ? undefined : stringifyJson(patch.addressBook.billingAddress));
+        addSet(assignments, params, 'email_notifications_enabled', patch.emailNotificationsEnabled);
         if (assignments.length)
             await this.pool.query(`UPDATE users SET ${assignments.join(', ')} WHERE email = ?`, [...params, email]);
         const user = await this.findUserByEmail(email);
@@ -259,6 +295,18 @@ export class MariaDbService {
         const row = await this.firstRow('SELECT * FROM orders WHERE idempotency_key = ? LIMIT 1', [idempotencyKey]);
         return row ? mapOrder(row) : null;
     }
+    async insertPurchasedPattern(input) {
+        await this.pool.query(`INSERT INTO purchased_patterns (user_email, product_id, order_id, pdf_key) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE pdf_key = VALUES(pdf_key)`, [input.userEmail, input.productId, input.orderId, input.pdfKey]);
+        return { ...input, purchasedAt: new Date() };
+    }
+    async listPurchasedPatternsForUser(email) {
+        return (await this.queryRows('SELECT * FROM purchased_patterns WHERE user_email = ? ORDER BY purchased_at DESC', [email])).map(mapPurchasedPattern);
+    }
+    async findPurchasedPatternForUser(email, productId) {
+        const row = await this.firstRow('SELECT * FROM purchased_patterns WHERE user_email = ? AND product_id = ? ORDER BY purchased_at DESC LIMIT 1', [email, productId]);
+        return row ? mapPurchasedPattern(row) : null;
+    }
     async listOrdersForUser(email) {
         return (await this.queryRows('SELECT * FROM orders WHERE client_email = ? ORDER BY created_at DESC', [email])).map(mapOrder);
     }
@@ -271,6 +319,39 @@ export class MariaDbService {
         if (!row)
             throw new Error(`Order not found: ${orderId}`);
         return mapOrder(row);
+    }
+    async listMarketEvents(now = new Date()) {
+        return (await this.queryRows('SELECT * FROM market_events WHERE starts_at >= ? ORDER BY starts_at ASC', [now])).map(mapMarketEvent);
+    }
+    async getNextMarketEvent(now = new Date()) {
+        const row = await this.firstRow('SELECT * FROM market_events WHERE starts_at >= ? ORDER BY starts_at ASC LIMIT 1', [now]);
+        return row ? mapMarketEvent(row) : null;
+    }
+    async insertMarketEvent(input) {
+        await this.pool.query(`INSERT INTO market_events (event_id, title, location, starts_at, ends_at, description, external_url) VALUES (?, ?, ?, ?, ?, ?, ?)`, [input.id, input.title, input.location, input.startsAt, input.endsAt ?? null, input.description ?? null, input.externalUrl ?? null]);
+        const event = await this.findMarketEventById(input.id);
+        if (!event)
+            throw new Error(`Market event not found: ${input.id}`);
+        return event;
+    }
+    async updateMarketEvent(eventId, patch) {
+        const assignments = [];
+        const params = [];
+        addSet(assignments, params, 'title', patch.title);
+        addSet(assignments, params, 'location', patch.location);
+        addSet(assignments, params, 'starts_at', patch.startsAt);
+        addSet(assignments, params, 'ends_at', patch.endsAt);
+        addSet(assignments, params, 'description', patch.description);
+        addSet(assignments, params, 'external_url', patch.externalUrl);
+        if (assignments.length)
+            await this.pool.query(`UPDATE market_events SET ${assignments.join(', ')} WHERE event_id = ?`, [...params, eventId]);
+        const event = await this.findMarketEventById(eventId);
+        if (!event)
+            throw new Error(`Market event not found: ${eventId}`);
+        return event;
+    }
+    async deleteMarketEvent(eventId) {
+        await this.pool.query('DELETE FROM market_events WHERE event_id = ?', [eventId]);
     }
     async listBlogArticles() {
         return (await this.queryRows('SELECT * FROM blog_articles ORDER BY created_at DESC')).map(mapBlogArticle);
@@ -303,6 +384,10 @@ export class MariaDbService {
     async findBlogArticleById(articleId) {
         const row = await this.firstRow('SELECT * FROM blog_articles WHERE article_id = ? LIMIT 1', [articleId]);
         return row ? mapBlogArticle(row) : null;
+    }
+    async findMarketEventById(eventId) {
+        const row = await this.firstRow('SELECT * FROM market_events WHERE event_id = ? LIMIT 1', [eventId]);
+        return row ? mapMarketEvent(row) : null;
     }
     async firstRow(sql, params = []) {
         const rows = await this.queryRows(sql, params);
@@ -349,7 +434,7 @@ function addSet(assignments, params, column, value) {
     }
 }
 function mapAdmin(row) { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), createdAt: row.created_at }; }
-function mapUser(row) { return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), cart: parseJsonArray(row.cart), pdfKeys: parseJsonStringArray(row.pdf_keys), createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapUser(row) { const addressBook = { shippingAddress: parseOptionalJsonObject(row.shipping_address), billingAddress: parseOptionalJsonObject(row.billing_address) }; return { email: String(row.email), name: String(row.name), passwordHash: String(row.password_hash), salt: String(row.salt), cart: parseJsonArray(row.cart), pdfKeys: parseJsonStringArray(row.pdf_keys), addressBook: addressBook?.shippingAddress || addressBook?.billingAddress ? addressBook : undefined, emailNotificationsEnabled: row.email_notifications_enabled === undefined ? undefined : Boolean(row.email_notifications_enabled), createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapCookie(row) { return { email: String(row.email), cookie: String(row.cookie), kind: row.kind, timeCreated: row.time_created, lastSeenAt: row.last_seen_at, expiresAt: row.expires_at }; }
 function mapGuest(row) { return { guestCookie: String(row.guest_cookie), cart: parseJsonArray(row.cart), lastSeenAt: row.last_seen_at, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapProduct(row) {
@@ -359,6 +444,8 @@ function mapProduct(row) {
         : { ...base, type: 'pattern', pdfKey: String(row.pdf_key ?? '') };
 }
 function mapOrder(row) { return { orderId: String(row.order_id), idempotencyKey: row.idempotency_key === null || row.idempotency_key === undefined ? undefined : String(row.idempotency_key), productId: String(row.product_id), clientEmail: String(row.client_email), details: parseJsonObject(row.details), clientInstructions: String(row.client_instructions ?? ''), chargedAmount: Number(row.charged_amount), status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapPurchasedPattern(row) { return { userEmail: String(row.user_email), productId: String(row.product_id), orderId: String(row.order_id), pdfKey: String(row.pdf_key), purchasedAt: row.purchased_at }; }
+function mapMarketEvent(row) { return { id: String(row.event_id), title: String(row.title), location: String(row.location), startsAt: row.starts_at, endsAt: row.ends_at, description: row.description === null || row.description === undefined ? undefined : String(row.description), externalUrl: row.external_url === null || row.external_url === undefined ? undefined : String(row.external_url) }; }
 function mapBlogArticle(row) { return { articleId: String(row.article_id), title: String(row.title), slug: String(row.slug), excerpt: String(row.excerpt), blocks: parseBlogBlocks(row.blocks), published: Boolean(row.published), createdAt: row.created_at, updatedAt: row.updated_at }; }
 function parseBlogBlocks(value) { return parseJsonArray(value); }
 function stringifyJson(value) { return JSON.stringify(value); }
@@ -371,6 +458,8 @@ function isProductSize(value) { return ['extra-small', 'small', 'medium', 'large
 function parseColorVariations(value) { return parseJsonArray(value).map((item) => { if (typeof item === 'string')
     return { name: item }; const record = item; return { name: String(record.name ?? ''), imageUrl: record.imageUrl === undefined ? undefined : String(record.imageUrl) }; }).filter((item) => item.name); }
 function parseJsonObject(value) { const parsed = parseJson(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}; }
+function parseOptionalJsonObject(value) { if (value === null || value === undefined)
+    return undefined; return parseJsonObject(value); }
 function parseJson(value) { if (value === null || value === undefined)
     return null; if (typeof value === 'string')
     return JSON.parse(value); if (Buffer.isBuffer(value))

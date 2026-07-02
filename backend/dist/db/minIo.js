@@ -30,6 +30,10 @@ export class MinIoBucketService {
     async deletePatternPdf(key) {
         await this.client.removeObject(this.config.privateBucket, key);
     }
+    async signPatternPdf(key, expiresInSeconds = 600) {
+        const url = await this.client.presignedGetObject(this.config.privateBucket, key, expiresInSeconds);
+        return { url, expiresAt: new Date(Date.now() + expiresInSeconds * 1000) };
+    }
     publicUrl(key) {
         const endpoint = this.config.publicEndpoint ?? 'http://localhost:9000';
         return `${endpoint.replace(/\/$/, '')}/${this.config.publicBucket}/${key}`;

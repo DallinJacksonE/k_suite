@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { createMariaDbAccess } from '../db/mariadb_access.js';
+import { createMinIoBucketService } from '../db/minIo.js';
 import { clearClientCookie, readCookie, requireCookie, setClientCookie } from './cookieHelpers.js';
 import { issueCsrfToken, requireCsrfToken } from './csrfHelpers.js';
 import { assertNotRateLimited, createRateLimiter } from './rateLimitHelpers.js';
 export function createUserRouter(deps = {}) {
     const router = Router();
     const access = deps.access ?? createMariaDbAccess();
+    const bucket = deps.bucket ?? createMinIoBucketService();
     const limiter = createRateLimiter(deps.rateLimit);
     router.get('/auth', asyncHandler(async (req, res) => {
         assertNotRateLimited(limiter, req, `login:${readQuery(req, 'email').toLowerCase()}`);
@@ -47,6 +49,13 @@ export function createUserRouter(deps = {}) {
         const email = readOptionalQuery(req, 'email') ?? await readSessionEmail(access, req);
         const profile = await access.getUser(email, clientCookie);
         res.json(profile);
+    }));
+    router.get('/purchased-patterns', asyncHandler(async (req, res) => {
+        res.json({ patterns: await access.listPurchasedPatterns(requireCookie(req, 'client_cookie')) });
+    }));
+    router.post('/purchased-patterns/:productId/download', asyncHandler(async (req, res) => {
+        requireCsrfToken(req);
+        res.json(await access.createPurchasedPatternDownload(readParam(req, 'productId'), requireCookie(req, 'client_cookie'), bucket));
     }));
     router.post('/profile', asyncHandler(async (req, res) => {
         requireCsrfToken(req);
@@ -95,4 +104,10 @@ function readBodyEmail(req) {
     if (typeof email !== 'string' || !email)
         throw new Error('email is required.');
     return email;
+}
+function readParam(req, name) {
+    const value = req.params[name];
+    if (!value || Array.isArray(value))
+        throw new Error(`${name} is required.`);
+    return value;
 }

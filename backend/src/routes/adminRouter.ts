@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import type { CreateBlogArticleInput, CreateProductInput, OrderStatus, UpdateBlogArticleInput, UpdateProductInput } from '@k_suite/shared';
+import type { CreateBlogArticleInput, CreateMarketEventInput, CreateProductInput, OrderStatus, UpdateBlogArticleInput, UpdateMarketEventInput, UpdateProductInput } from '@k_suite/shared';
 import { createMariaDbAccess, type MariaDbAccess } from '../db/mariadb_access.js';
 import { createMinIoBucketService, type MinIoBucketService, type PhotoCategory } from '../db/minIo.js';
 import { readCookie, setAdminCookie } from './cookieHelpers.js';
@@ -95,6 +95,25 @@ export function createAdminRouter(deps: AdminRouterDeps = {}): Router {
 
   router.delete('/blog/articles/:articleId', asyncHandler(async (req, res) => {
     await access.deleteBlogArticle(readAdminCookie(req), readParam(req, 'articleId'));
+    res.status(204).send();
+  }));
+
+  router.get('/markets', asyncHandler(async (req, res) => {
+    res.json({ events: await access.listAdminMarketEvents(readAdminCookie(req)) });
+  }));
+
+  router.post('/markets', asyncHandler(async (req, res) => {
+    const event = await access.createMarketEvent(readAdminCookie(req), req.body as CreateMarketEventInput);
+    res.status(201).json({ event });
+  }));
+
+  router.patch('/markets/:eventId', asyncHandler(async (req, res) => {
+    const event = await access.updateMarketEvent(readAdminCookie(req), readParam(req, 'eventId'), req.body as UpdateMarketEventInput);
+    res.json({ event });
+  }));
+
+  router.delete('/markets/:eventId', asyncHandler(async (req, res) => {
+    await access.deleteMarketEvent(readAdminCookie(req), readParam(req, 'eventId'));
     res.status(204).send();
   }));
 

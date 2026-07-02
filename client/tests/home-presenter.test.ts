@@ -24,11 +24,12 @@ test('home presenter loads featured products and next market through the service
   assert.equal(viewUpdates[0].nextMarket?.title, 'Saturday Market')
 })
 
-test('client API service exposes temporary home data methods behind named service calls', async () => {
+test('client API service loads featured products and next market from backend endpoints', async () => {
   const calls: string[] = []
   const fetcher: typeof fetch = async (input) => {
     calls.push(String(input))
     if (String(input).endsWith('/shop/plushies?batchSize=3')) return jsonResponse({ products: [] })
+    if (String(input).endsWith('/markets/next')) return jsonResponse({ nextEvent: { id: 'market-1', title: 'Saturday Market', startsAt: '2026-07-04T10:00:00.000Z', location: 'Town Square' } })
     throw new Error(`unexpected request ${String(input)}`)
   }
   const service = new FetchClientApiService('/api', fetcher)
@@ -36,6 +37,6 @@ test('client API service exposes temporary home data methods behind named servic
   await service.listFeaturedProducts()
   const market = await service.getNextMarketEvent()
 
-  assert.deepEqual(calls, ['/api/shop/plushies?batchSize=3'])
-  assert.equal(market?.source, 'temporary-placeholder')
+  assert.deepEqual(calls, ['/api/shop/plushies?batchSize=3', '/api/markets/next'])
+  assert.equal(market?.title, 'Saturday Market')
 })

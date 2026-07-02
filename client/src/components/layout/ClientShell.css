@@ -1,22 +1,20 @@
 .client-shell {
   min-height: 100svh;
-  color: var(--text);
-  background:
-    radial-gradient(circle at top left, var(--hero-glow), transparent 34rem),
-    linear-gradient(135deg, rgba(241, 250, 238, 0.96), rgba(255, 255, 255, 0.88));
+  color: var(--color-text);
+  background: var(--shell-bg);
 }
 
 .client-shell__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: min(1120px, calc(100% - 32px));
+  width: min(var(--layout-max-width), calc(100% - var(--layout-gutter)));
   margin: 0 auto;
-  padding: 24px 0;
+  padding: var(--layout-header-y) 0;
 }
 
 .client-shell__brand {
-  color: var(--text-h);
+  color: var(--color-heading);
   font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -25,113 +23,117 @@
 
 .client-shell__menu-button {
   display: none;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 14px;
-  color: var(--text-h);
-  background: var(--panel);
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--button-radius);
+  padding: var(--nav-link-padding);
+  color: var(--button-secondary-text);
+  background: var(--button-secondary-bg);
   cursor: pointer;
 }
 
 .client-shell__nav {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--control-gap);
 }
 
-.client-shell__nav a {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 14px;
-  color: var(--text-h);
+.client-shell__nav a,
+.client-shell__nav button {
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--button-radius);
+  padding: var(--nav-link-padding);
+  color: var(--button-secondary-text);
+  font: inherit;
   text-decoration: none;
-  background: var(--panel);
+  background: var(--button-secondary-bg);
+  cursor: pointer;
 }
 
 .client-shell__nav a.active {
   color: var(--button-text);
-  background: var(--accent);
+  background: var(--button-bg);
 }
 
 .client-shell__main {
   display: grid;
-  gap: 24px;
-  width: min(1120px, calc(100% - 32px));
+  gap: var(--layout-section-gap);
+  width: min(var(--layout-max-width), calc(100% - var(--layout-gutter)));
   margin: 0 auto;
-  padding: 32px 0 56px;
+  padding: var(--layout-main-y-start) 0 var(--layout-main-y-end);
 }
 
 .page-card,
 .status-card {
   border: 1px solid var(--border);
-  border-radius: 28px;
-  background: var(--panel);
+  border-radius: var(--radius-card);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
 .page-card {
   display: grid;
-  gap: 16px;
-  padding: clamp(24px, 5vw, 48px);
+  gap: var(--grid-gap);
+  padding: clamp(var(--space-9), 5vw, var(--space-11));
 }
 
 .page-card h1,
 .page-card h2,
 .status-card h2 {
   margin: 0;
-  color: var(--text-h);
+  color: var(--color-heading);
 }
 
 .page-card p,
 .status-card p {
   margin: 0;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 
 .route-grid,
 .featured-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--grid-gap);
 }
 
 .route-grid article,
 .featured-card {
   border: 1px solid var(--border);
-  border-radius: 22px;
-  padding: 20px;
-  background: rgba(var(--panel-rgb), 0.72);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8);
+  background: var(--surface-muted);
 }
 
 .status-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 24px;
+  gap: var(--grid-gap);
+  padding: var(--space-9);
 }
 
 .status-card button,
 .cta-link {
-  border: 0;
-  border-radius: 999px;
-  padding: 12px 18px;
+  border: 1px solid var(--button-border);
+  border-radius: var(--button-radius);
+  padding: var(--button-padding);
   color: var(--button-text);
-  background: var(--accent);
+  background: var(--button-bg);
   font: inherit;
-  font-weight: 800;
+  font-weight: var(--button-font-weight);
   text-decoration: none;
   cursor: pointer;
 }
 
-.status-card button:disabled {
+.status-card button:disabled,
+.cta-link:disabled {
   cursor: wait;
-  opacity: 0.7;
+  opacity: var(--button-disabled-opacity);
 }
 
 .eyebrow {
   margin: 0;
-  color: var(--accent);
+  color: var(--color-brand);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -160,7 +162,8 @@
     display: flex;
   }
 
-  .client-shell__nav a {
+  .client-shell__nav a,
+  .client-shell__nav button {
     text-align: center;
   }
 

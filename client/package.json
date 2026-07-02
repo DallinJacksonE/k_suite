@@ -12,6 +12,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@k_suite/shared": "file:../shared",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.7",
     "react": "^19.2.7",

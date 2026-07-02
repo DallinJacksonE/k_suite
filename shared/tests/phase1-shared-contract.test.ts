@@ -23,9 +23,12 @@ import type {
   ShopProductBatchRequest,
   ShopProductBatchResponse,
   ShopProductFilters,
+  ToastRequest,
+  ToastVariant,
   UserAddressBook,
   UserProfileDetails,
 } from '../src/index.js';
+import { DEFAULT_TOAST_DURATION_MS } from '../src/toast.js';
 
 const size: ProductSize = 'medium';
 const sortKey: ProductSortKey = 'price';
@@ -196,6 +199,12 @@ const rateLimit: RateLimitErrorResponse = {
 };
 
 const emailEvent: OrderEmailEvent = 'order_created';
+const toastVariant: ToastVariant = 'success';
+const toastRequest: ToastRequest = {
+  message: 'Saved successfully.',
+  variant: toastVariant,
+  durationMs: DEFAULT_TOAST_DURATION_MS,
+};
 
 void [
   orderContactSnapshot,
@@ -210,4 +219,5 @@ void [
   csrf,
   rateLimit,
   emailEvent,
+  toastRequest,
 ];

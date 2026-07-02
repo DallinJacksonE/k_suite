@@ -44,6 +44,10 @@ test('admin management routes list products and mark orders fulfilled', async ()
     createBlogArticle: async () => ({}),
     updateBlogArticle: async () => ({}),
     deleteBlogArticle: async () => {},
+    listAdminMarketEvents: async () => [],
+    createMarketEvent: async () => ({}),
+    updateMarketEvent: async () => ({}),
+    deleteMarketEvent: async () => {},
   };
   const server = await listen(createApp(access));
   try {
@@ -76,6 +80,10 @@ test('admin management routes expose service health and blog article CRUD', asyn
     createBlogArticle: async (cookie, input) => { calls.push(['createBlogArticle', cookie, input.title]); return { ...article, ...input }; },
     updateBlogArticle: async (cookie, articleId, input) => { calls.push(['updateBlogArticle', cookie, articleId, input.published]); return { ...article, articleId, ...input }; },
     deleteBlogArticle: async (cookie, articleId) => { calls.push(['deleteBlogArticle', cookie, articleId]); },
+    listAdminMarketEvents: async () => [],
+    createMarketEvent: async () => ({}),
+    updateMarketEvent: async () => ({}),
+    deleteMarketEvent: async () => {},
   };
   const server = await listen(createApp(access));
   try {
@@ -95,6 +103,46 @@ test('admin management routes expose service health and blog article CRUD', asyn
     const deleted = await request(server, '/admin/blog/articles/blog-1', { method: 'DELETE', headers: { cookie: 'admin_cookie=admin-1' } });
     assert.equal(deleted.response.status, 204);
     assert.deepEqual(calls.map((call) => call[0]), ['getServiceHealth', 'listBlogArticles', 'createBlogArticle', 'updateBlogArticle', 'deleteBlogArticle']);
+  } finally {
+    server.close();
+  }
+});
+
+test('admin management routes expose market date CRUD', async () => {
+  const calls = [];
+  const event = { id: 'market-1', title: 'Saturday Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' };
+  const access = {
+    adminLogin: async () => ({ admin: { email: 'admin@example.com', name: 'Admin' }, cookie: 'admin-1' }),
+    getOrders: async () => [],
+    updateOrderStatus: async () => ({}),
+    listAdminProducts: async () => [],
+    addProduct: async () => ({}),
+    editProduct: async () => ({}),
+    removeProduct: async () => {},
+    getServiceHealth: async () => ({ status: 'ok', checkedAt: '2026-01-01T00:00:00.000Z', services: [] }),
+    listBlogArticles: async () => [],
+    createBlogArticle: async () => ({}),
+    updateBlogArticle: async () => ({}),
+    deleteBlogArticle: async () => {},
+    listAdminMarketEvents: async (cookie) => { calls.push(['listAdminMarketEvents', cookie]); return [event]; },
+    createMarketEvent: async (cookie, input) => { calls.push(['createMarketEvent', cookie, input.title]); return { ...event, ...input }; },
+    updateMarketEvent: async (cookie, eventId, input) => { calls.push(['updateMarketEvent', cookie, eventId, input.location]); return { ...event, id: eventId, ...input }; },
+    deleteMarketEvent: async (cookie, eventId) => { calls.push(['deleteMarketEvent', cookie, eventId]); },
+  };
+  const server = await listen(createApp(access));
+  try {
+    const listed = await request(server, '/admin/markets', { headers: { cookie: 'admin_cookie=admin-1' } });
+    assert.equal(listed.body.events[0].title, 'Saturday Market');
+
+    const created = await request(server, '/admin/markets', { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'admin_cookie=admin-1' }, body: JSON.stringify(event) });
+    assert.equal(created.response.status, 201);
+
+    const updated = await request(server, '/admin/markets/market-1', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: 'admin_cookie=admin-1' }, body: JSON.stringify({ location: 'New Hall' }) });
+    assert.equal(updated.body.event.location, 'New Hall');
+
+    const deleted = await request(server, '/admin/markets/market-1', { method: 'DELETE', headers: { cookie: 'admin_cookie=admin-1' } });
+    assert.equal(deleted.response.status, 204);
+    assert.deepEqual(calls.map((call) => call[0]), ['listAdminMarketEvents', 'createMarketEvent', 'updateMarketEvent', 'deleteMarketEvent']);
   } finally {
     server.close();
   }

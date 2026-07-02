@@ -9,6 +9,11 @@ import {
   createMariaDbAccess,
   getUser,
   loginUser,
+  createMarketEvent,
+  updateMarketEvent,
+  deleteMarketEvent,
+  listAdminMarketEvents,
+  listPublishedBlogArticles,
   listShopProducts,
   addCartItem,
   removeCartItem,
@@ -27,6 +32,9 @@ class FakeService {
     this.guests = new Map();
     this.products = new Map();
     this.orders = [];
+    this.purchasedPatterns = [];
+    this.blogArticles = [];
+    this.marketEvents = new Map();
   }
 
   async findUserByEmail(email) { return this.users.get(email) ?? null; }
@@ -45,6 +53,9 @@ class FakeService {
   async findProductById(productId) { return this.products.get(productId) ?? null; }
   async insertOrder(order) { this.orders.push(order); return order; }
   async findOrderByIdempotencyKey(idempotencyKey) { return this.orders.find((order) => order.idempotencyKey === idempotencyKey) ?? null; }
+  async insertPurchasedPattern(pattern) { const record = { ...pattern, purchasedAt: new Date() }; this.purchasedPatterns.push(record); return record; }
+  async listPurchasedPatternsForUser(email) { return this.purchasedPatterns.filter((pattern) => pattern.userEmail === email); }
+  async findPurchasedPatternForUser(email, productId) { return this.purchasedPatterns.find((pattern) => pattern.userEmail === email && pattern.productId === productId) ?? null; }
   async listOrdersForUser(email) { return this.orders.filter((order) => order.clientEmail === email); }
   async listOrders() { return this.orders; }
   async initialize() {}
@@ -56,6 +67,11 @@ class FakeService {
   async deleteExpiredGuests(now) { for (const [guestCookie, record] of this.guests) if (record.expiresAt <= now) this.guests.delete(guestCookie); }
   async removeProduct(productId) { await this.updateProduct(productId, { available: false }); }
   async listProducts(productType, includeUnavailable = false) { return [...this.products.values()].filter((product) => (!productType || product.type === productType) && (includeUnavailable || product.available)); }
+  async listBlogArticles() { return this.blogArticles; }
+  async listMarketEvents() { return [...this.marketEvents.values()]; }
+  async insertMarketEvent(input) { this.marketEvents.set(input.id, input); return input; }
+  async updateMarketEvent(eventId, patch) { const event = { ...this.marketEvents.get(eventId), ...patch }; this.marketEvents.set(eventId, event); return event; }
+  async deleteMarketEvent(eventId) { this.marketEvents.delete(eventId); }
 }
 
 test('addUser stores a salted hash and returns a usable client cookie', async () => {
@@ -160,6 +176,35 @@ test('checkout keeps pattern orders pending until payment is confirmed', async (
   assert.equal(result.purchasedPatternDownloadsAvailable, false);
   assert.equal(service.orders[0].details.lineItems[0].pdfKey, 'pdfs/patterns/p.pdf');
   assert.deepEqual((await service.findUserByEmail('a@example.com')).cart, []);
+});
+
+test('listPublishedBlogArticles only exposes published articles', async () => {
+  const service = new FakeService();
+  service.blogArticles.push(
+    { articleId: 'published', title: 'Published', slug: 'published', excerpt: 'Visible', blocks: [], published: true },
+    { articleId: 'draft', title: 'Draft', slug: 'draft', excerpt: 'Hidden', blocks: [], published: false },
+  );
+
+  const articles = await listPublishedBlogArticles(service);
+
+  assert.deepEqual(articles.map((article) => article.articleId), ['published']);
+});
+
+test('admin market events require admin access and support create update delete', async () => {
+  const service = new FakeService();
+  await service.insertAdmin({ email: 'admin@example.com', name: 'Admin', passwordHash: 'hash', salt: 'salt' });
+  await newCookie('admin@example.com', undefined, 'admin', service, { randomBytes: () => 'admin-cookie' });
+
+  const created = await createMarketEvent('admin-cookie', { title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' }, service, { randomUUID: () => 'market-1' });
+  const listed = await listAdminMarketEvents('admin-cookie', service);
+  const updated = await updateMarketEvent('admin-cookie', 'market-1', { location: 'City Hall' }, service);
+  await deleteMarketEvent('admin-cookie', 'market-1', service);
+
+  assert.equal(created.id, 'market-1');
+  assert.equal(listed.length, 1);
+  assert.equal(updated.location, 'City Hall');
+  assert.equal((await service.listMarketEvents()).length, 0);
+  await assert.rejects(() => createMarketEvent('', { title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' }, service), /Admin access required/);
 });
 
 test('order status emails are sent for shipped orders', async () => {

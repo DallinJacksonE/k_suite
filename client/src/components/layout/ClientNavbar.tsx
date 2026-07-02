@@ -1,20 +1,29 @@
 import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useClientSession } from '../auth/useClientSession'
 
 const navigationLinks = [
   { to: '/', label: 'Home' },
   { to: '/shop', label: 'Shop' },
   { to: '/markets', label: 'Markets' },
+  { to: '/blog', label: 'Blog' },
   { to: '/cart', label: 'Cart' },
 ]
 
 export function ClientNavbar() {
   const [menuOpen, setMenuOpen] = useState(false)
-  const { session, canViewProfile } = useClientSession()
+  const navigate = useNavigate()
+  const { session, canViewProfile, logout } = useClientSession()
   const cartCount = session.status === 'authenticated' ? session.user.cart.length : 0
   const profileTarget = canViewProfile ? '/profile' : '/login'
   const profileLabel = canViewProfile ? 'Profile' : 'Login / Register'
+  const loggedIn = session.status === 'authenticated'
+
+  async function logOut() {
+    await logout()
+    setMenuOpen(false)
+    navigate('/')
+  }
 
   return (
     <header className="client-shell__header">
@@ -43,6 +52,7 @@ export function ClientNavbar() {
         <NavLink to={profileTarget} onClick={() => setMenuOpen(false)}>
           {profileLabel}
         </NavLink>
+        {loggedIn ? <button type="button" onClick={() => void logOut()}>Logout</button> : null}
       </nav>
     </header>
   )

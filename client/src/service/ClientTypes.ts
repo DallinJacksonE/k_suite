@@ -24,9 +24,14 @@ export interface PublicUser {
 export interface UserProfileDetails {
   email: string
   name: string
-  addressBook?: unknown
+  addressBook?: UserAddressBook
   emailNotificationsEnabled?: boolean
 }
+
+export interface ShippingAddress { name: string; line1: string; line2?: string; city: string; region: string; postalCode: string; country: string }
+export interface BillingAddress extends ShippingAddress { sameAsShipping?: boolean }
+export interface UserAddressBook { shippingAddress?: ShippingAddress; billingAddress?: BillingAddress }
+export interface UpdateProfileInput { email: string; name?: string; password?: string; addressBook?: UserAddressBook; emailNotificationsEnabled?: boolean }
 
 export interface OrderRecord {
   orderId: string
@@ -48,6 +53,8 @@ export interface PurchasedPatternDownload {
   downloadUrl?: string
   expiresAt?: string
 }
+
+export interface PurchasedPatternsResponse { patterns: PurchasedPatternDownload[] }
 
 export interface ClientProfileResponse {
   user: UserProfileDetails
@@ -104,9 +111,34 @@ export interface MarketEventSummary {
   id: string
   title: string
   startsAt: string
-  locationName: string
+  locationName?: string
+  location?: string
+  endsAt?: string
+  description?: string
+  externalUrl?: string
   source?: 'temporary-placeholder'
 }
+
+export interface MarketEventResponse { events: MarketEventSummary[]; nextEvent?: MarketEventSummary }
+
+export interface BlogHeadingBlock { type: 'heading'; level: 1 | 2 | 3; text: string }
+export interface BlogParagraphBlock { type: 'paragraph'; text: string }
+export interface BlogImageBlock { type: 'image'; url: string; alt: string }
+export interface BlogYoutubeBlock { type: 'youtube'; videoId: string; title?: string }
+export type BlogArticleBlock = BlogHeadingBlock | BlogParagraphBlock | BlogImageBlock | BlogYoutubeBlock
+
+export interface BlogArticle {
+  articleId: string
+  title: string
+  slug: string
+  excerpt: string
+  blocks: BlogArticleBlock[]
+  published: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface BlogArticleResponse { articles: BlogArticle[] }
 
 export interface HomeViewModel {
   featuredProducts: Product[]

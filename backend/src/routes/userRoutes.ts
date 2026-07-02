@@ -1,18 +1,21 @@
 import { Router, type Request, type Response } from 'express';
 import type { AddUserInput, MariaDbAccess, UpdateUserInput, UserLoginInput } from '@k_suite/shared';
 import { createMariaDbAccess } from '../db/mariadb_access.js';
+import { createMinIoBucketService, type MinIoBucketService } from '../db/minIo.js';
 import { clearClientCookie, readCookie, requireCookie, setClientCookie } from './cookieHelpers.js';
 import { issueCsrfToken, requireCsrfToken } from './csrfHelpers.js';
 import { assertNotRateLimited, createRateLimiter, type RateLimitOptions } from './rateLimitHelpers.js';
 
 export interface UserRouterDeps {
-  access?: Pick<MariaDbAccess, 'addUser' | 'loginUser' | 'getSession' | 'logoutUser' | 'getUser' | 'updateUser' | 'deleteUser'>;
+  access?: Pick<MariaDbAccess, 'addUser' | 'loginUser' | 'getSession' | 'logoutUser' | 'getUser' | 'updateUser' | 'deleteUser' | 'listPurchasedPatterns' | 'createPurchasedPatternDownload'>;
+  bucket?: Pick<MinIoBucketService, 'signPatternPdf'>;
   rateLimit?: RateLimitOptions;
 }
 
 export function createUserRouter(deps: UserRouterDeps = {}): Router {
   const router = Router();
   const access = deps.access ?? createMariaDbAccess();
+  const bucket = deps.bucket ?? createMinIoBucketService();
   const limiter = createRateLimiter(deps.rateLimit);
 
   router.get('/auth', asyncHandler(async (req, res) => {
@@ -61,6 +64,15 @@ export function createUserRouter(deps: UserRouterDeps = {}): Router {
     const email = readOptionalQuery(req, 'email') ?? await readSessionEmail(access, req);
     const profile = await access.getUser(email, clientCookie);
     res.json(profile);
+  }));
+
+  router.get('/purchased-patterns', asyncHandler(async (req, res) => {
+    res.json({ patterns: await access.listPurchasedPatterns(requireCookie(req, 'client_cookie')) });
+  }));
+
+  router.post('/purchased-patterns/:productId/download', asyncHandler(async (req, res) => {
+    requireCsrfToken(req);
+    res.json(await access.createPurchasedPatternDownload(readParam(req, 'productId'), requireCookie(req, 'client_cookie'), bucket));
   }));
 
   router.post('/profile', asyncHandler(async (req, res) => {
@@ -113,6 +125,12 @@ function readBodyEmail(req: Request): string {
   const email = (req.body as { email?: unknown }).email;
   if (typeof email !== 'string' || !email) throw new Error('email is required.');
   return email;
+}
+
+function readParam(req: Request, name: string): string {
+  const value = req.params[name];
+  if (!value || Array.isArray(value)) throw new Error(`${name} is required.`);
+  return value;
 }
 
 

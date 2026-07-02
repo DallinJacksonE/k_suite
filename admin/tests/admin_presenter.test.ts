@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { AdminDashboardPresenter } from '../src/presenter/AdminDashboardPresenter.ts'
 import type { AdminDashboardView, UploadedAsset } from '../src/presenter/AdminDashboardPresenter.ts'
-import type { AdminApiService, ApiEndpointDoc, BlogArticleRecord, OrderRecord, ProductRecord, ServiceHealthReport } from '../src/service/AdminApiService.ts'
+import type { AdminApiService, ApiEndpointDoc, BlogArticleRecord, MarketEventRecord, OrderRecord, ProductRecord, ServiceHealthReport } from '../src/service/AdminApiService.ts'
 
 class FakeView implements AdminDashboardView {
   busy = false
@@ -16,6 +16,7 @@ class FakeView implements AdminDashboardView {
   orders: OrderRecord[] = []
   products: ProductRecord[] = []
   articles: BlogArticleRecord[] = []
+  marketEvents: MarketEventRecord[] = []
   serviceHealth: ServiceHealthReport | null = null
   uploadedAssets: UploadedAsset[] = []
 
@@ -29,6 +30,7 @@ class FakeView implements AdminDashboardView {
   setOrders(value: OrderRecord[]): void { this.orders = value }
   setProducts(value: ProductRecord[]): void { this.products = value }
   setBlogArticles(value: BlogArticleRecord[]): void { this.articles = value }
+  setMarketEvents(value: MarketEventRecord[]): void { this.marketEvents = value }
   setServiceHealth(value: ServiceHealthReport): void { this.serviceHealth = value }
   addCreatedProduct(value: ProductRecord): void { this.products = [value, ...this.products] }
   addUploadedAsset(value: UploadedAsset): void { this.uploadedAssets = [value, ...this.uploadedAssets] }
@@ -53,6 +55,10 @@ function createService(): AdminApiService {
     createBlogArticle: async (input) => ({ articleId: 'blog-1', createdAt: 'now', updatedAt: 'now', ...input, published: input.published ?? false }),
     updateBlogArticle: async (articleId, input) => ({ articleId, title: 'T', slug: 't', excerpt: 'E', blocks: [], published: false, ...input }),
     deleteBlogArticle: async () => {},
+    listMarketEvents: async () => [],
+    createMarketEvent: async (input) => ({ id: 'market-1', ...input }),
+    updateMarketEvent: async (eventId, input) => ({ id: eventId, title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z', ...input }),
+    deleteMarketEvent: async () => {},
     loadServiceHealth: async () => ({ status: 'ok', checkedAt: 'now', services: [{ name: 'database', status: 'ok' }] }),
   }
 }
@@ -135,4 +141,18 @@ test('orders and service health workflows update category state', async () => {
 
   assert.equal(view.orders[0].status, 'fulfilled')
   assert.equal(view.serviceHealth?.services[0].name, 'database')
+})
+
+test('market date workflows validate and refresh events', async () => {
+  const presenter = new AdminDashboardPresenter(createService())
+  const view = new FakeView()
+  presenter.attach(view)
+
+  await presenter.createMarketEvent({ title: 'Saturday Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' })
+  await presenter.updateMarketEvent('market-1', { location: 'City Hall' })
+  await presenter.deleteMarketEvent('market-1')
+
+  assert.equal(view.status, 'Market date deleted.')
+  await presenter.createMarketEvent({ title: '', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' })
+  assert.equal(view.error, 'title is required.')
 })

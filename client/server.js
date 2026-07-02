@@ -10,8 +10,17 @@ const app = express();
 const PORT = process.env.PORT || 4999;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
 
+app.get('/healthz', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.use((req, res, next) => {
   console.log(`[Express] Received ${req.method} request for ${req.url}`);
+  next();
+});
+
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
   next();
 });
 
@@ -23,10 +32,15 @@ app.use('/api', createProxyMiddleware({
   logger: console, // Forces the v3 middleware to output its internal logs
   on: {
     proxyReq: (proxyReq, req, res) => {
-
+      proxyReq.removeHeader('if-none-match');
+      proxyReq.removeHeader('if-modified-since');
+      proxyReq.setHeader('cache-control', 'no-store');
       console.log(`[Proxy] Attempting to forward ${req.method} to ${BACKEND_URL}${req.url}`);
     },
     proxyRes: (proxyRes, req, res) => {
+      delete proxyRes.headers.etag;
+      delete proxyRes.headers['last-modified'];
+      proxyRes.headers['cache-control'] = 'no-store';
       console.log(`[Proxy] Backend responded with status: ${proxyRes.statusCode}`);
     },
     error: (err, req, res) => {

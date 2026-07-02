@@ -25,6 +25,8 @@ export interface HealthResponse { status: string; timestamp: string }
 export interface OrderRecord { orderId: string; productId: string; clientEmail: string; details: Record<string, unknown>; clientInstructions: string; chargedAmount: number; status: OrderStatus; createdAt?: string; updatedAt?: string }
 export interface BlogArticleInput { title: string; slug: string; excerpt: string; blocks: BlogBlock[]; published?: boolean }
 export interface BlogArticleRecord extends BlogArticleInput { articleId: string; published: boolean; createdAt?: string; updatedAt?: string }
+export interface MarketEventInput { title: string; location: string; startsAt: string; endsAt?: string; description?: string; externalUrl?: string }
+export interface MarketEventRecord extends MarketEventInput { id: string }
 export interface ServiceHealthCheck { name: string; status: 'ok' | 'error'; message?: string }
 export interface ServiceHealthReport { status: 'ok' | 'degraded'; checkedAt: string; services: ServiceHealthCheck[] }
 
@@ -46,6 +48,10 @@ export interface AdminApiService {
   createBlogArticle(input: BlogArticleInput): Promise<BlogArticleRecord>
   updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<BlogArticleRecord>
   deleteBlogArticle(articleId: string): Promise<void>
+  listMarketEvents(): Promise<MarketEventRecord[]>
+  createMarketEvent(input: MarketEventInput): Promise<MarketEventRecord>
+  updateMarketEvent(eventId: string, input: Partial<MarketEventInput>): Promise<MarketEventRecord>
+  deleteMarketEvent(eventId: string): Promise<void>
   loadServiceHealth(): Promise<ServiceHealthReport>
 }
 
@@ -69,6 +75,10 @@ export class FetchAdminApiService implements AdminApiService {
   async createBlogArticle(input: BlogArticleInput): Promise<BlogArticleRecord> { return (await this.request<{ article: BlogArticleRecord }>('/admin/blog/articles', jsonInit('POST', input))).article }
   async updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<BlogArticleRecord> { return (await this.request<{ article: BlogArticleRecord }>(`/admin/blog/articles/${encodeURIComponent(articleId)}`, jsonInit('PATCH', input))).article }
   async deleteBlogArticle(articleId: string): Promise<void> { await this.request<void>(`/admin/blog/articles/${encodeURIComponent(articleId)}`, { method: 'DELETE' }) }
+  async listMarketEvents(): Promise<MarketEventRecord[]> { return (await this.request<{ events: MarketEventRecord[] }>('/admin/markets')).events }
+  async createMarketEvent(input: MarketEventInput): Promise<MarketEventRecord> { return (await this.request<{ event: MarketEventRecord }>('/admin/markets', jsonInit('POST', input))).event }
+  async updateMarketEvent(eventId: string, input: Partial<MarketEventInput>): Promise<MarketEventRecord> { return (await this.request<{ event: MarketEventRecord }>(`/admin/markets/${encodeURIComponent(eventId)}`, jsonInit('PATCH', input))).event }
+  async deleteMarketEvent(eventId: string): Promise<void> { await this.request<void>(`/admin/markets/${encodeURIComponent(eventId)}`, { method: 'DELETE' }) }
   async loadServiceHealth(): Promise<ServiceHealthReport> { return (await this.request<{ health: ServiceHealthReport }>('/admin/service-health')).health }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {

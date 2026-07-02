@@ -1,30 +1,139 @@
+/*
+  Client theme tokens
+  -------------------
+  UI/UX handoff starts here. Change colors, button styles, spacing, and
+  corner radii in this file; feature CSS should consume these variables.
+*/
 :root {
-  --text: #5f5968;
-  --text-h: #1d3557;
-  --muted: #81788f;
-  --bg: #f1faee;
-  --accent: #457b9d;
-  --button-text: #fff;
+  /* Typography */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-sans);
+  --font-button: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --panel-rgb: 255, 255, 255;
-  --panel-alpha: 0.86;
-  --border-rgb: 39, 31, 49;
+  /* Brand and semantic colors */
+  --color-page: #f1faee;
+  --color-page-rgb: 241, 250, 238;
+  --color-surface: #ffffff;
+  --color-surface-rgb: 255, 255, 255;
+  --color-surface-alt: #f8fbf7;
+  --color-surface-alt-rgb: 248, 251, 247;
+  --color-text: #5f5968;
+  --color-heading: #1d3557;
+  --color-muted: #81788f;
+  --color-brand: #457b9d;
+  --color-brand-rgb: 69, 123, 157;
+  --color-brand-soft-rgb: 168, 218, 220;
+  --color-on-brand: #ffffff;
+  --color-border-rgb: 39, 31, 49;
+  --color-shadow-rgb: 34, 22, 54;
+  --color-danger: #8b1e1e;
+  --color-danger-rgb: 139, 30, 30;
+  --color-danger-bg-rgb: 255, 220, 220;
+  --color-overlay-rgb: 29, 53, 87;
+
+  /* Opacity and composed surfaces */
+  --surface-alpha: 0.86;
+  --surface-muted-alpha: 0.72;
+  --surface-strong-alpha: 0.92;
   --border-alpha: 0.12;
-  --shadow-rgb: 34, 22, 54;
   --shadow-alpha: 0.12;
-  --hero-glow-rgb: 168, 218, 220;
   --hero-glow-alpha: 0.44;
+  --media-bg-alpha: 0.28;
+  --overlay-alpha: 0.42;
+  --danger-bg-alpha: 0.82;
 
-  --panel: rgba(var(--panel-rgb), var(--panel-alpha));
-  --border: rgba(var(--border-rgb), var(--border-alpha));
-  --shadow: 0 24px 80px rgba(var(--shadow-rgb), var(--shadow-alpha));
-  --hero-glow: rgba(var(--hero-glow-rgb), var(--hero-glow-alpha));
-  --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --surface: rgba(var(--color-surface-rgb), var(--surface-alpha));
+  --surface-muted: rgba(var(--color-surface-rgb), var(--surface-muted-alpha));
+  --surface-strong: rgba(var(--color-surface-rgb), var(--surface-strong-alpha));
+  --surface-reader: rgba(var(--color-surface-rgb), 0.78);
+  --border: rgba(var(--color-border-rgb), var(--border-alpha));
+  --shadow: 0 24px 80px rgba(var(--color-shadow-rgb), var(--shadow-alpha));
+  --hero-glow: rgba(var(--color-brand-soft-rgb), var(--hero-glow-alpha));
+  --media-bg: rgba(var(--color-brand-soft-rgb), var(--media-bg-alpha));
+  --danger-bg: rgba(var(--color-danger-bg-rgb), var(--danger-bg-alpha));
+  --modal-overlay: rgba(var(--color-overlay-rgb), var(--overlay-alpha));
+  --selection-ring: 0 0 0 2px rgba(var(--color-brand-soft-rgb), 0.5);
+  --shell-bg: radial-gradient(circle at top left, var(--hero-glow), transparent 34rem), linear-gradient(135deg, rgba(var(--color-page-rgb), 0.96), rgba(var(--color-surface-rgb), 0.88));
 
-  font: 16px/1.5 var(--sans);
-  color: var(--text);
-  background: var(--bg);
+  /* Layout */
+  --layout-max-width: 1120px;
+  --layout-gutter: 32px;
+  --layout-header-y: 24px;
+  --layout-main-y-start: 32px;
+  --layout-main-y-end: 56px;
+  --layout-section-gap: 24px;
+  --grid-gap: 16px;
+  --form-gap: 14px;
+  --control-gap: 12px;
+
+  /* Corners */
+  --radius-xs: 6px;
+  --radius-sm: 14px;
+  --radius-md: 16px;
+  --radius-lg: 18px;
+  --radius-xl: 20px;
+  --radius-2xl: 22px;
+  --radius-3xl: 24px;
+  --radius-card: 28px;
+  --radius-pill: 999px;
+
+  /* Spacing */
+  --space-1: 6px;
+  --space-2: 8px;
+  --space-3: 10px;
+  --space-4: 12px;
+  --space-5: 14px;
+  --space-6: 16px;
+  --space-7: 18px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 32px;
+  --space-11: 48px;
+  --space-12: 56px;
+
+  /* Buttons and links */
+  --button-bg: var(--color-brand);
+  --button-text: var(--color-on-brand);
+  --button-border: transparent;
+  --button-radius: var(--radius-pill);
+  --button-padding: 12px 18px;
+  --button-font-weight: 800;
+  --button-disabled-opacity: 0.7;
+  --button-secondary-bg: rgba(var(--color-surface-rgb), 0.88);
+  --button-secondary-text: var(--color-heading);
+  --button-secondary-border: var(--border);
+  --nav-link-padding: 8px 14px;
+
+  /* Inputs and badges */
+  --input-bg: var(--surface-strong);
+  --input-text: var(--color-heading);
+  --input-border: var(--border);
+  --input-radius: var(--radius-sm);
+  --input-padding: 10px 12px;
+  --badge-bg: var(--hero-glow);
+  --badge-text: var(--color-heading);
+  --badge-radius: var(--radius-pill);
+  --badge-padding: 8px 12px;
+
+  /* Backward-compatible aliases for existing code and third-party slices */
+  --text: var(--color-text);
+  --text-h: var(--color-heading);
+  --muted: var(--color-muted);
+  --bg: var(--color-page);
+  --accent: var(--color-brand);
+  --panel-rgb: var(--color-surface-rgb);
+  --panel-alpha: var(--surface-alpha);
+  --hero-glow-rgb: var(--color-brand-soft-rgb);
+  --panel: var(--surface);
+  --sans: var(--font-sans);
+  --heading-font: var(--font-heading);
+  --button-font: var(--font-button);
+  --mono: var(--font-mono);
+
+  font: 16px/1.5 var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -45,4 +154,18 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+button,
+.cta-link {
+  font-family: var(--font-button);
 }

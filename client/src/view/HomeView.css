@@ -1,5 +1,5 @@
 .home-hero {
-  gap: 18px;
+  gap: var(--space-7);
 }
 
 .home-hero h1 {
@@ -17,29 +17,29 @@
 .home-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--control-gap);
 }
 
 .cta-link--secondary {
-  color: var(--text-h);
-  background: rgba(var(--panel-rgb), 0.88);
-  border: 1px solid var(--border);
+  border: 1px solid var(--button-secondary-border);
+  color: var(--button-secondary-text);
+  background: var(--button-secondary-bg);
 }
 
 .featured-card {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .featured-card img {
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   object-fit: cover;
-  background: rgba(var(--hero-glow-rgb), 0.28);
+  background: var(--media-bg);
 }
 
 .featured-card h3 {
   margin: 0;
-  color: var(--text-h);
+  color: var(--color-heading);
 }

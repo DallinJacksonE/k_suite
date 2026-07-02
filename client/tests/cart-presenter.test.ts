@@ -58,7 +58,7 @@ test('client API service reads cart, patches items, and estimates checkout', asy
 
   assert.equal(calls[0].url, '/api/shop/cart')
   assert.equal(calls[2].init.method, 'PATCH')
-  assert.equal((calls[2].init.headers as Record<string, string>)['x-csrf-token'], 'csrf-1')
+  assert.equal(new Headers(calls[2].init.headers).get('x-csrf-token'), 'csrf-1')
   assert.equal(calls[3].url, '/api/shop/checkout/estimate')
 })
 

@@ -227,16 +227,18 @@ function SizePicker({ sizes, onChange }: { sizes: ProductSize[]; onChange(sizes:
   return (
     <fieldset className="full-width checkbox-group">
       <legend>Sizes</legend>
-      {productSizeOptions.map((size) => (
-        <label key={size} className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={sizes.includes(size)}
-            onChange={(event) => onChange(event.target.checked ? [...sizes, size] : sizes.filter((current) => current !== size))}
-          />
-          {size}
-        </label>
-      ))}
+      <span>
+        {productSizeOptions.map((size) => (
+          <label key={size} className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={sizes.includes(size)}
+              onChange={(event) => onChange(event.target.checked ? [...sizes, size] : sizes.filter((current) => current !== size))}
+            />
+            {size}
+          </label>
+        ))}
+      </span>
     </fieldset>
   )
 }

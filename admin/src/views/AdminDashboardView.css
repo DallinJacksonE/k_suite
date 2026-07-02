@@ -175,10 +175,9 @@ label {
 }
 
 .checkbox-label {
-  display: flex;
-  align-items: center;
+  align-items: left;
   gap: 10px;
-  width: fit-content;
+  display: inline;
 }
 
 input,

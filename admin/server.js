@@ -10,6 +10,10 @@ const app = express();
 const PORT = process.env.PORT || 4999;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
 
+app.get('/healthz', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.use((req, res, next) => {
   console.log(`[Express] Received ${req.method} request for ${req.url}`);
   next();

@@ -1,20 +1,20 @@
 .shop-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--grid-gap);
 }
 
 .product-card button {
   display: grid;
   width: 100%;
   height: 100%;
-  gap: 10px;
+  gap: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 24px;
-  padding: 16px;
+  border-radius: var(--radius-3xl);
+  padding: var(--space-6);
   color: inherit;
   text-align: left;
-  background: var(--panel);
+  background: var(--surface);
   box-shadow: var(--shadow);
   cursor: pointer;
 }
@@ -23,9 +23,9 @@
 .product-modal__panel > img {
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   object-fit: cover;
-  background: rgba(var(--hero-glow-rgb), 0.28);
+  background: var(--media-bg);
 }
 
 .product-card h2,
@@ -36,32 +36,32 @@
 .sale-badge,
 .shop-notice,
 .shop-error {
-  border-radius: 999px;
-  padding: 8px 12px;
+  border-radius: var(--badge-radius);
+  padding: var(--badge-padding);
   width: fit-content;
 }
 
 .sale-badge,
 .shop-notice {
-  color: var(--text-h);
-  background: rgba(var(--hero-glow-rgb), 0.44);
+  color: var(--badge-text);
+  background: var(--badge-bg);
 }
 
 .shop-error {
-  color: #8b1e1e;
-  background: rgba(255, 220, 220, 0.82);
+  color: var(--color-danger);
+  background: var(--danger-bg);
 }
 
 .shop-filters {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--control-gap);
   align-items: end;
 }
 
 .shop-filters label {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .product-modal {
@@ -70,19 +70,19 @@
   z-index: 10;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: rgba(29, 53, 87, 0.42);
+  padding: var(--space-9);
+  background: var(--modal-overlay);
 }
 
 .product-modal__panel {
   display: grid;
   width: min(640px, 100%);
-  max-height: calc(100svh - 48px);
+  max-height: calc(100svh - calc(var(--space-9) * 2));
   overflow: auto;
-  gap: 14px;
-  border-radius: 28px;
-  padding: 24px;
-  background: var(--panel);
+  gap: var(--space-5);
+  border-radius: var(--radius-card);
+  padding: var(--space-9);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -92,7 +92,7 @@
 
 .product-modal label {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .shop-load-more {

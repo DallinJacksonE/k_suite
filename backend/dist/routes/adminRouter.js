@@ -73,6 +73,21 @@ export function createAdminRouter(deps = {}) {
         await access.deleteBlogArticle(readAdminCookie(req), readParam(req, 'articleId'));
         res.status(204).send();
     }));
+    router.get('/markets', asyncHandler(async (req, res) => {
+        res.json({ events: await access.listAdminMarketEvents(readAdminCookie(req)) });
+    }));
+    router.post('/markets', asyncHandler(async (req, res) => {
+        const event = await access.createMarketEvent(readAdminCookie(req), req.body);
+        res.status(201).json({ event });
+    }));
+    router.patch('/markets/:eventId', asyncHandler(async (req, res) => {
+        const event = await access.updateMarketEvent(readAdminCookie(req), readParam(req, 'eventId'), req.body);
+        res.json({ event });
+    }));
+    router.delete('/markets/:eventId', asyncHandler(async (req, res) => {
+        await access.deleteMarketEvent(readAdminCookie(req), readParam(req, 'eventId'));
+        res.status(204).send();
+    }));
     return router;
 }
 export const adminRouter = createAdminRouter();

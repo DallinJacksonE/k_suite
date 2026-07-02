@@ -4,12 +4,33 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./toast": {
+      "types": "./dist/toast.d.ts",
+      "import": "./dist/toast.js"
+    },
+    "./toast.css": "./src/toast.css"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "tsc --noEmit --ignoreConfig --target ES2022 --module NodeNext --moduleResolution NodeNext --strict tests/phase1-shared-contract.test.ts"
   },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@types/react": "^19.2.17",
+    "react": "^19.2.7",
     "typescript": "^6.0.3"
   }
 }

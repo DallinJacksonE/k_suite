@@ -633,7 +633,7 @@ These requirements are folded into the phase checklists below rather than being 
 
 ---
 
-## Phase 9: Purchased Pattern Downloads
+## Phase 9: Purchased Pattern Downloads ✅ Implemented 2026-06-30
 
 ### Task 9.1: Add purchased pattern persistence
 
@@ -649,14 +649,14 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Add `purchased_patterns` table:
+- [x] Add `purchased_patterns` table:
   - `user_email`
   - `product_id`
   - `order_id`
   - `pdf_key`
   - `purchased_at`
-- Add service methods to insert/list purchased pattern records.
-- Stop relying on `users.pdf_keys` as the only purchase source, or migrate it to the new table.
+- [x] Add service methods to insert/list purchased pattern records.
+- [x] Stop relying on `users.pdf_keys` as the only purchase source, or migrate it to the new table.
 
 ### Task 9.2: Add presigned private download endpoint
 
@@ -672,14 +672,14 @@ These requirements are folded into the phase checklists below rather than being 
 
 **API contract:**
 
-- `GET /api/user/purchased-patterns` returns purchased pattern metadata, no direct permanent private URL.
-- `POST /api/user/purchased-patterns/:productId/download` returns `{ url, expiresAt }` if current `client_cookie` owns the purchase.
+- [x] `GET /api/user/purchased-patterns` returns purchased pattern metadata, no direct permanent private URL.
+- [x] `POST /api/user/purchased-patterns/:productId/download` returns `{ url, expiresAt }` if current `client_cookie` owns the purchase.
 
 **Rules:**
 
-- Presigned URL should be short-lived, e.g. 10 minutes.
-- Server verifies `client_cookie` and purchase record before signing.
-- Guest users cannot call this endpoint successfully.
+- [x] Presigned URL should be short-lived, e.g. 10 minutes.
+- [x] Server verifies `client_cookie` and purchase record before signing.
+- [x] Guest users cannot call this endpoint successfully.
 
 ### Task 9.3: Show downloads in profile page
 
@@ -694,13 +694,13 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Profile lists purchased patterns with product title, purchase date, and download button.
-- Download button requests presigned link on demand.
-- UI explains link expiration.
+- [x] Profile lists purchased patterns with product title, purchase date, and download button.
+- [x] Download button requests presigned link on demand.
+- [x] UI explains link expiration.
 
 ---
 
-## Phase 10: User Profile Page
+## Phase 10: User Profile Page ✅ Implemented 2026-06-30
 
 ### Task 10.1: Add backend profile fields
 
@@ -717,16 +717,16 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Add columns or related table for:
+- [x] Add columns or related table for:
   - display name
   - shipping address
   - billing address
   - marketing/email notification preference if desired
-- Profile response includes user details, addresses, orders, purchased patterns metadata.
-- Profile update validates address shape.
-- Delete account clears client cookie.
-- Delete account removes or clears user-owned profile/address/session records.
-- Retained historical order records use checkout snapshots and should be anonymized where practical instead of retaining live profile data dependencies.
+- [x] Profile response includes user details, addresses, orders, purchased patterns metadata.
+- [x] Profile update validates address shape.
+- [x] Delete account clears client cookie.
+- [x] Delete account removes or clears user-owned profile/address/session records.
+- [x] Retained historical order records use checkout snapshots and should be anonymized where practical instead of retaining live profile data dependencies.
 
 ### Task 10.2: Build profile UI
 
@@ -744,16 +744,16 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Profile route requires auth through `useClientSession`.
-- User can edit name/password/address information.
-- User can see order statuses.
-- User can see purchased patterns and request downloads.
-- Delete account requires explicit confirmation.
-- After delete, clear session state and route home.
+- [x] Profile route requires auth through `useClientSession`.
+- [x] User can edit name/password/address information.
+- [x] User can see order statuses.
+- [x] User can see purchased patterns and request downloads.
+- [x] Delete account requires explicit confirmation.
+- [x] After delete, clear session state and route home.
 
 ---
 
-## Phase 11: Markets Calendar
+## Phase 11: Markets Calendar ✅ Implemented 2026-06-30
 
 ### Task 11.1: Add market events backend/API
 
@@ -772,11 +772,11 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Add market events table with title, location, startsAt, endsAt, description, externalUrl.
-- Public endpoint: `GET /api/markets`.
-- Public endpoint: `GET /api/markets/next`.
-- Prefer admin-editable market events if implementation time allows; otherwise seed/configure initial events behind the same public API contract.
-- If admin management is included, follow the existing admin inline/dropdown editor pattern rather than hardcoding markets in the client.
+- [x] Add market events table with title, location, startsAt, endsAt, description, externalUrl.
+- [x] Public endpoint: `GET /api/markets`.
+- [x] Public endpoint: `GET /api/markets/next`.
+- [x] Prefer admin-editable market events if implementation time allows; otherwise seed/configure initial events behind the same public API contract.
+- [ ] If admin management is included, follow the existing admin inline/dropdown editor pattern rather than hardcoding markets in the client.
 
 ### Task 11.2: Build markets calendar page
 
@@ -792,13 +792,13 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Calendar/list view works on mobile.
-- Next market is visually prominent.
-- Empty state is friendly.
+- [x] Calendar/list view works on mobile.
+- [x] Next market is visually prominent.
+- [x] Empty state is friendly.
 
 ---
 
-## Phase 12: Final Frontend Polish and Runtime Verification
+## Phase 12: Final Frontend Polish and Runtime Verification ✅ Implemented 2026-06-30
 
 ### Task 12.1: Add client tests
 
@@ -811,9 +811,9 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Install `tsx` as a dev dependency if not present.
-- Add script: `"test": "node --import tsx --test tests/*.test.ts"`.
-- Test presenters:
+- [x] Install `tsx` as a dev dependency if not present.
+- [x] Add script: `"test": "node --import tsx --test tests/*.test.ts"`.
+- [x] Test presenters:
   - session presenter/hook service behavior where practical
   - shop presenter filter/batch behavior
   - cart totals and guest/pattern restrictions
@@ -840,13 +840,13 @@ These requirements are folded into the phase checklists below rather than being 
 
 **Checklist:**
 
-- Navbar supports keyboard navigation, visible focus, and accessible mobile menu labels/states.
-- Product detail modal traps focus, closes on Escape, restores focus to the triggering product card, and has labelled title/content regions.
-- Cart and checkout forms expose validation messages near fields and with accessible status text.
-- Profile delete confirmation is explicit and keyboard usable.
-- Every route has mobile-first layout behavior.
-- Every async view has loading, empty, and error states.
-- Product images, market details, order statuses, and download actions have useful text alternatives/labels.
+- [x] Navbar supports keyboard navigation, visible focus, and accessible mobile menu labels/states.
+- [x] Product detail modal traps focus, closes on Escape, restores focus to the triggering product card, and has labelled title/content regions.
+- [x] Cart and checkout forms expose validation messages near fields and with accessible status text.
+- [x] Profile delete confirmation is explicit and keyboard usable.
+- [x] Every route has mobile-first layout behavior.
+- [x] Every async view has loading, empty, and error states.
+- [x] Product images, market details, order statuses, and download actions have useful text alternatives/labels.
 
 **Verification:**
 

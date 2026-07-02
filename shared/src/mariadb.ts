@@ -101,6 +101,25 @@ export interface PurchasedPatternDownload {
   expiresAt?: Date | string;
 }
 
+export interface PurchasedPatternRecord {
+  userEmail: string;
+  productId: string;
+  orderId: string;
+  pdfKey: string;
+  purchasedAt?: Date | string;
+}
+
+export interface InsertPurchasedPatternInput {
+  userEmail: string;
+  productId: string;
+  orderId: string;
+  pdfKey: string;
+}
+
+export interface PatternDownloadSigner {
+  signPatternPdf(pdfKey: string): Promise<{ url: string; expiresAt: Date | string }>;
+}
+
 export interface ClientProfileResponse {
   user: UserProfileDetails;
   orders: OrderRecord[];
@@ -132,6 +151,24 @@ export interface MarketEvent {
   externalUrl?: string;
 }
 
+export interface CreateMarketEventInput {
+  title: string;
+  location: string;
+  startsAt: Date | string;
+  endsAt?: Date | string;
+  description?: string;
+  externalUrl?: string;
+}
+
+export interface UpdateMarketEventInput {
+  title?: string;
+  location?: string;
+  startsAt?: Date | string;
+  endsAt?: Date | string;
+  description?: string;
+  externalUrl?: string;
+}
+
 export interface MarketEventResponse {
   events: MarketEvent[];
   nextEvent?: MarketEvent;
@@ -155,6 +192,8 @@ export interface UserRecord {
   salt: string;
   cart: unknown[];
   pdfKeys: string[];
+  addressBook?: UserAddressBook;
+  emailNotificationsEnabled?: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -276,6 +315,8 @@ export interface UserPatch {
   salt?: string;
   cart?: unknown[];
   pdfKeys?: string[];
+  addressBook?: UserAddressBook;
+  emailNotificationsEnabled?: boolean;
 }
 
 export interface AddUserInput {
@@ -286,10 +327,13 @@ export interface AddUserInput {
 }
 
 export interface UpdateUserInput {
+  email?: string;
   name?: string;
   password?: string;
   cart?: unknown[];
   pdfKeys?: string[];
+  addressBook?: UserAddressBook;
+  emailNotificationsEnabled?: boolean;
 }
 
 export interface PublicUser {
@@ -300,8 +344,9 @@ export interface PublicUser {
 }
 
 export interface UserProfile {
-  user: PublicUser;
+  user: UserProfileDetails;
   orders: OrderRecord[];
+  purchasedPatterns: PurchasedPatternDownload[];
 }
 
 export interface AccessResult {
@@ -422,9 +467,17 @@ export interface MariaDbServiceLike {
   removeProduct(productId: string): Promise<void>;
   insertOrder(input: InsertOrderInput): Promise<OrderRecord>;
   findOrderByIdempotencyKey(idempotencyKey: CheckoutIdempotencyKey): Promise<OrderRecord | null>;
+  insertPurchasedPattern(input: InsertPurchasedPatternInput): Promise<PurchasedPatternRecord>;
+  listPurchasedPatternsForUser(email: string): Promise<PurchasedPatternRecord[]>;
+  findPurchasedPatternForUser(email: string, productId: string): Promise<PurchasedPatternRecord | null>;
   listOrdersForUser(email: string): Promise<OrderRecord[]>;
   listOrders(): Promise<OrderRecord[]>;
   updateOrderStatus(orderId: string, status: OrderStatus): Promise<OrderRecord>;
+  listMarketEvents(now?: Date): Promise<MarketEvent[]>;
+  getNextMarketEvent(now?: Date): Promise<MarketEvent | null>;
+  insertMarketEvent(input: CreateMarketEventInput & { id: string }): Promise<MarketEvent>;
+  updateMarketEvent(eventId: string, patch: UpdateMarketEventInput): Promise<MarketEvent>;
+  deleteMarketEvent(eventId: string): Promise<void>;
   listBlogArticles(): Promise<BlogArticleRecord[]>;
   insertBlogArticle(input: CreateBlogArticleInput & { articleId: string }): Promise<BlogArticleRecord>;
   updateBlogArticle(articleId: string, patch: UpdateBlogArticleInput): Promise<BlogArticleRecord>;
@@ -451,6 +504,7 @@ export interface MariaDbAccess {
   editProduct(adminCookie: string, productId: string, productDTO: UpdateProductInput): Promise<Product>;
   removeProduct(adminCookie: string, productId: string): Promise<void>;
   listBlogArticles(adminCookie: string): Promise<BlogArticleRecord[]>;
+  listPublishedBlogArticles(): Promise<BlogArticleRecord[]>;
   createBlogArticle(adminCookie: string, input: CreateBlogArticleInput): Promise<BlogArticleRecord>;
   updateBlogArticle(adminCookie: string, articleId: string, input: UpdateBlogArticleInput): Promise<BlogArticleRecord>;
   deleteBlogArticle(adminCookie: string, articleId: string): Promise<void>;
@@ -461,4 +515,12 @@ export interface MariaDbAccess {
   removeCartItem(productId: string, cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CartResult>;
   estimateCheckout(input: CheckoutEstimateRequest, cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CheckoutEstimateResponse>;
   checkout(input: CheckoutRequest, cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CheckoutResult>;
+  listPurchasedPatterns(clientCookie: string): Promise<PurchasedPatternDownload[]>;
+  createPurchasedPatternDownload(productId: string, clientCookie: string, signer: PatternDownloadSigner): Promise<PurchasedPatternDownload>;
+  listMarketEvents(): Promise<MarketEventResponse>;
+  getNextMarketEvent(): Promise<MarketEvent | null>;
+  listAdminMarketEvents(adminCookie: string): Promise<MarketEvent[]>;
+  createMarketEvent(adminCookie: string, input: CreateMarketEventInput): Promise<MarketEvent>;
+  updateMarketEvent(adminCookie: string, eventId: string, input: UpdateMarketEventInput): Promise<MarketEvent>;
+  deleteMarketEvent(adminCookie: string, eventId: string): Promise<void>;
 }

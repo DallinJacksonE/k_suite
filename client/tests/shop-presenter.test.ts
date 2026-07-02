@@ -82,7 +82,7 @@ test('client API service calls filtered shop batch endpoint and cart mutation en
   assert.equal(batch.products[0].id, 'plushie-1')
   assert.match(calls[0].url, /\/api\/shop\/products\?/) 
   assert.match(calls[0].url, /saleOnly=true/)
-  assert.equal((calls[2].init.headers as Record<string, string>)['x-csrf-token'], 'csrf-1')
+  assert.equal(new Headers(calls[2].init.headers).get('x-csrf-token'), 'csrf-1')
 })
 
 function jsonResponse(body: unknown): Response {

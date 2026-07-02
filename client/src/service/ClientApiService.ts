@@ -1,6 +1,8 @@
 import type {
   ClientProfileResponse,
   ClientSessionState,
+  BlogArticle,
+  BlogArticleResponse,
   CartItemInput,
   CartResponse,
   CartSnapshot,
@@ -8,7 +10,10 @@ import type {
   CheckoutEstimateResponse,
   CsrfTokenResponse,
   LoginInput,
+  MarketEventResponse,
   MarketEventSummary,
+  PurchasedPatternDownload,
+  PurchasedPatternsResponse,
   Product,
   PublicUser,
   RegisterInput,
@@ -16,6 +21,7 @@ import type {
   ShopProductBatchResponse,
   ShopProductListResponse,
   UpdateCartItemInput,
+  UpdateProfileInput,
 } from './ClientTypes'
 
 export interface HealthResponse {
@@ -30,8 +36,14 @@ export interface ClientApiService {
   register(input: RegisterInput): Promise<ClientSessionState>
   logout(): Promise<void>
   loadProfile(): Promise<ClientProfileResponse>
+  updateProfile(input: UpdateProfileInput): Promise<PublicUser>
+  deleteProfile(email: string): Promise<void>
+  listPurchasedPatterns(): Promise<PurchasedPatternDownload[]>
+  createPurchasedPatternDownload(productId: string): Promise<PurchasedPatternDownload>
   listFeaturedProducts(): Promise<Product[]>
   getNextMarketEvent(): Promise<MarketEventSummary | null>
+  listMarketEvents(): Promise<MarketEventResponse>
+  listBlogArticles(): Promise<BlogArticle[]>
   listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse>
   addCartItem(input: CartItemInput): Promise<CartResponse>
   getCart(): Promise<CartSnapshot>
@@ -43,7 +55,7 @@ export class FetchClientApiService implements ClientApiService {
   private readonly basePath: string
   private readonly fetcher: typeof fetch
 
-  constructor(basePath = '/api', fetcher: typeof fetch = fetch) {
+  constructor(basePath = '/api', fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
     this.basePath = basePath
     this.fetcher = fetcher
   }
@@ -72,19 +84,38 @@ export class FetchClientApiService implements ClientApiService {
     return this.request<ClientProfileResponse>('/user/profile')
   }
 
+  async updateProfile(input: UpdateProfileInput): Promise<PublicUser> {
+    return (await this.mutatingRequest<{ user: PublicUser }>('/user/profile', input)).user
+  }
+
+  async deleteProfile(email: string): Promise<void> {
+    const csrf = await this.request<CsrfTokenResponse>('/user/csrf')
+    await this.request<void>('/user/profile', { method: 'DELETE', headers: { 'content-type': 'application/json', [csrf.headerName]: csrf.token }, body: JSON.stringify({ email }) })
+  }
+
+  async listPurchasedPatterns(): Promise<PurchasedPatternDownload[]> {
+    return (await this.request<PurchasedPatternsResponse>('/user/purchased-patterns')).patterns
+  }
+
+  async createPurchasedPatternDownload(productId: string): Promise<PurchasedPatternDownload> {
+    return this.mutatingRequest<PurchasedPatternDownload>(`/user/purchased-patterns/${encodeURIComponent(productId)}/download`, {})
+  }
+
   async listFeaturedProducts(): Promise<Product[]> {
     const response = await this.request<ShopProductListResponse>('/shop/plushies?batchSize=3')
     return response.products
   }
 
   async getNextMarketEvent(): Promise<MarketEventSummary | null> {
-    return {
-      id: 'temporary-next-market',
-      title: 'Upcoming handmade market',
-      startsAt: 'TBD',
-      locationName: 'Market calendar coming soon',
-      source: 'temporary-placeholder',
-    }
+    return (await this.request<{ nextEvent: MarketEventSummary | null }>('/markets/next')).nextEvent
+  }
+
+  async listMarketEvents(): Promise<MarketEventResponse> {
+    return this.request<MarketEventResponse>('/markets')
+  }
+
+  async listBlogArticles(): Promise<BlogArticle[]> {
+    return (await this.request<BlogArticleResponse>('/blog/articles')).articles
   }
 
   async listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse> {
@@ -132,8 +163,9 @@ export class FetchClientApiService implements ClientApiService {
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await this.fetcher(`${this.basePath}${path}`, {
       ...init,
+      cache: init.cache ?? 'no-store',
       credentials: 'include',
-      headers: init.headers,
+      headers: withDefaultHeaders(init.headers),
     })
 
     if (response.status === 204) return undefined as T
@@ -143,6 +175,13 @@ export class FetchClientApiService implements ClientApiService {
 
     return body as T
   }
+}
+
+function withDefaultHeaders(headers: HeadersInit | undefined): Headers {
+  const nextHeaders = new Headers(headers)
+  if (!nextHeaders.has('accept')) nextHeaders.set('accept', 'application/json')
+  if (!nextHeaders.has('cache-control')) nextHeaders.set('cache-control', 'no-store')
+  return nextHeaders
 }
 
 function toShopQuery(request: ShopProductBatchRequest): string {
