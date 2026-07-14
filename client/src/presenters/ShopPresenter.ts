@@ -1,4 +1,4 @@
-import type { ClientSessionState, Product, ShopProductBatchRequest, ShopProductFilters, ShopViewModel, CartItemInput } from '../service/ClientTypes'
+import type { CartItemInput, ClientSessionState, Product, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductFilters, ShopViewModel } from '../service/ClientTypes'
 
 export interface ShopPresenterView {
   setShop(model: ShopViewModel): void
@@ -11,22 +11,33 @@ export interface ShopService {
   addCartItem(input: CartItemInput): Promise<{ cart: CartItemInput[] }>
 }
 
-const initialShop: ShopViewModel = {
+interface ShopPresenterOptions {
+  productType?: ProductType | 'all'
+}
+
+function createInitialShop(productType: ProductType | 'all' = 'all'): ShopViewModel {
+  return {
   products: [],
-  filters: { type: 'all' },
+  filters: { type: productType },
+  sort: 'createdAt',
+  direction: 'desc',
   hasMore: false,
   selectedProduct: null,
+}
 }
 
 export class ShopPresenter {
   private readonly service: ShopService
   private readonly session: ClientSessionState
+  private readonly productType: ProductType | 'all'
   private view: ShopPresenterView | null = null
-  private model: ShopViewModel = initialShop
+  private model: ShopViewModel
 
-  constructor(service: ShopService, session: ClientSessionState) {
+  constructor(service: ShopService, session: ClientSessionState, options: ShopPresenterOptions = {}) {
     this.service = service
     this.session = session
+    this.productType = options.productType ?? 'all'
+    this.model = createInitialShop(this.productType)
   }
 
   attach(view: ShopPresenterView): void {
@@ -38,16 +49,16 @@ export class ShopPresenter {
   }
 
   async loadInitial(): Promise<void> {
-    await this.loadBatch({ filters: { type: 'all' }, batchSize: 20, sort: 'createdAt', direction: 'desc' }, false)
+    await this.loadBatch({ filters: this.model.filters, batchSize: 20, sort: this.model.sort, direction: this.model.direction }, false)
   }
 
-  async applyFilters(filters: ShopProductFilters): Promise<void> {
-    await this.loadBatch({ filters, batchSize: 20, sort: 'createdAt', direction: 'desc' }, false)
+  async applyFilters(filters: ShopProductFilters, sort: ProductSortKey = this.model.sort, direction: ProductSortDirection = this.model.direction): Promise<void> {
+    await this.loadBatch({ filters: this.withPageType(filters), batchSize: 20, sort, direction }, false)
   }
 
   async loadMore(): Promise<void> {
     if (!this.model.hasMore || !this.model.nextCursor) return
-    await this.loadBatch({ filters: this.model.filters, afterId: this.model.nextCursor, batchSize: 20, sort: 'createdAt', direction: 'desc' }, true)
+    await this.loadBatch({ filters: this.model.filters, afterId: this.model.nextCursor, batchSize: 20, sort: this.model.sort, direction: this.model.direction }, true)
   }
 
   selectProduct(product: Product | null): void {
@@ -77,6 +88,8 @@ export class ShopPresenter {
       this.model = {
         products: append ? [...this.model.products, ...batch.products] : batch.products,
         filters: batch.appliedFilters,
+        sort: request.sort ?? this.model.sort,
+        direction: request.direction ?? this.model.direction,
         nextCursor: batch.nextCursor,
         hasMore: batch.hasMore,
         selectedProduct: this.model.selectedProduct,
@@ -99,5 +112,9 @@ export class ShopPresenter {
 
   private publish(): void {
     this.view?.setShop(this.model)
+  }
+
+  private withPageType(filters: ShopProductFilters): ShopProductFilters {
+    return { ...filters, type: this.productType }
   }
 }

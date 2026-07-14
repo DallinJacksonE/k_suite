@@ -272,6 +272,34 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
+
+.order-listing {
+  display: grid;
+  gap: 12px;
+}
+
+.order-listing-header,
+.order-line-item-list li {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.order-line-item-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.order-line-item-list li {
+  grid-template-columns: minmax(160px, 1fr) repeat(4, auto);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
 .color-variation-stack {
   display: grid;
   gap: 12px;
@@ -282,6 +310,20 @@ button:disabled {
   grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) auto auto;
   align-items: end;
   gap: 12px;
+}
+
+.user-listing-summary {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(140px, auto)) auto;
+}
+
+.user-editor-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.user-order-row {
+  grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
 }
 
 .muted-text {
@@ -314,7 +356,10 @@ button:disabled {
   .dashboard-layout,
   .two-column,
   .product-listing-summary,
-  .color-variation-row {
+  .order-listing-header,
+  .order-line-item-list li,
+  .color-variation-row,
+  .user-order-row {
     grid-template-columns: 1fr;
   }
 

@@ -27,9 +27,15 @@ export function ProfileView() {
 
   return (
     <ClientShell>
-      <section className="page-card">
-        <p className="eyebrow">Profile</p>
-        <h1>{user ? `Welcome, ${user.name}` : session.status === 'authenticated' ? `Welcome, ${session.user.name}` : 'Loading profile...'}</h1>
+      <section className="page-card profile-page">
+        <div className="profile-hero">
+          <div>
+            <p className="eyebrow">Profile</p>
+            <h1>{user ? `Welcome, ${user.name}` : session.status === 'authenticated' ? `Welcome, ${session.user.name}` : 'Loading profile...'}</h1>
+            <p>Manage your account details, review order history, and generate fresh download links for purchased patterns.</p>
+          </div>
+          {profile ? <div className="profile-summary-card"><strong>{profile.orders.length}</strong><span>Orders</span><strong>{profile.purchasedPatterns.length}</strong><span>Patterns</span></div> : null}
+        </div>
         {model.error ? <p role="alert" className="form-error">{model.error}</p> : null}
         {model.message ? <p role="status" className="shop-notice">{model.message}</p> : null}
         {model.loading ? <p>Loading profile…</p> : null}

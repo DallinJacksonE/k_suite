@@ -18,20 +18,16 @@ export interface BucketServiceConfig {
   publicBucket: string;
   privateBucket: string;
   useSSL?: boolean;
+  region?: string;
 }
 
 export class MinIoBucketService {
-  private readonly client: Client;
+  readonly client: Client;
+  readonly signingClient: Client;
 
   constructor(private readonly config: BucketServiceConfig) {
-    const endpointUrl = new URL(config.endpoint);
-    this.client = new Client({
-      endPoint: endpointUrl.hostname,
-      port: Number(endpointUrl.port || (endpointUrl.protocol === 'https:' ? 443 : 80)),
-      useSSL: config.useSSL ?? endpointUrl.protocol === 'https:',
-      accessKey: config.accessKey,
-      secretKey: config.secretKey,
-    });
+    this.client = createClient(config, config.endpoint);
+    this.signingClient = createClient(config, config.publicEndpoint ?? 'http://localhost:9000');
   }
 
   async uploadPhoto(category: PhotoCategory, upload: BucketUpload): Promise<ProductPhotoUploadResult> {
@@ -55,7 +51,7 @@ export class MinIoBucketService {
   }
 
   async signPatternPdf(key: string, expiresInSeconds = 600): Promise<{ url: string; expiresAt: Date }> {
-    const url = await this.client.presignedGetObject(this.config.privateBucket, key, expiresInSeconds);
+    const url = await this.signingClient.presignedGetObject(this.config.privateBucket, key, expiresInSeconds);
     return { url, expiresAt: new Date(Date.now() + expiresInSeconds * 1000) };
   }
 
@@ -73,6 +69,19 @@ export function createMinIoBucketService(env: NodeJS.ProcessEnv = process.env): 
     secretKey: env.MINIO_SECRET_KEY ?? 'k_suite_minio_password',
     publicBucket: env.MINIO_PUBLIC_BUCKET ?? 'public-assets',
     privateBucket: env.MINIO_PRIVATE_BUCKET ?? 'private-patterns',
+    region: env.MINIO_REGION ?? 'us-east-1',
+  });
+}
+
+function createClient(config: BucketServiceConfig, endpoint: string): Client {
+  const endpointUrl = new URL(endpoint);
+  return new Client({
+    endPoint: endpointUrl.hostname,
+    port: Number(endpointUrl.port || (endpointUrl.protocol === 'https:' ? 443 : 80)),
+    useSSL: config.useSSL ?? endpointUrl.protocol === 'https:',
+    accessKey: config.accessKey,
+    secretKey: config.secretKey,
+    region: config.region ?? 'us-east-1',
   });
 }
 

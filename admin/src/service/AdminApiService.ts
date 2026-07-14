@@ -1,11 +1,13 @@
 export type ProductType = 'plushie' | 'pattern'
 export type ProductSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large'
-export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled'
+export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled' | 'refunded'
 export type BlogBlock =
   | { type: 'heading'; level: 1 | 2 | 3; text: string }
   | { type: 'paragraph'; text: string }
   | { type: 'image'; url: string; alt: string }
   | { type: 'youtube'; videoId: string; title?: string }
+
+export const DEFAULT_BLOG_COLLECTION_TAG = 'kaylies-creations-updates'
 
 export interface AdminCredentials { email: string; password: string }
 export interface AdminIdentity { email: string; name: string }
@@ -23,9 +25,17 @@ export interface ApiEndpointDoc { method: string; path: string; summary: string;
 export interface ApiDocsResponse { title: string; version: number; basePath: string; endpoints: ApiEndpointDoc[] }
 export interface HealthResponse { status: string; timestamp: string }
 export interface OrderRecord { orderId: string; productId: string; clientEmail: string; details: Record<string, unknown>; clientInstructions: string; chargedAmount: number; status: OrderStatus; createdAt?: string; updatedAt?: string }
-export interface BlogArticleInput { title: string; slug: string; excerpt: string; blocks: BlogBlock[]; published?: boolean }
-export interface BlogArticleRecord extends BlogArticleInput { articleId: string; published: boolean; createdAt?: string; updatedAt?: string }
-export interface MarketEventInput { title: string; location: string; startsAt: string; endsAt?: string; description?: string; externalUrl?: string }
+export interface UserAddress { name: string; line1: string; line2?: string; city: string; region: string; postalCode: string; country: string }
+export interface UserAddressBook { shippingAddress?: UserAddress; billingAddress?: UserAddress }
+export interface AdminUserStats { orderCount: number; totalSpent: number; refundedTotal: number; purchasedPatternCount: number; cartItemCount: number }
+export interface AdminUserAccount { user: { email: string; name: string; addressBook?: UserAddressBook; emailNotificationsEnabled?: boolean; createdAt?: string; updatedAt?: string }; orders: OrderRecord[]; purchasedPatterns: Array<{ productId: string; orderId: string; title: string; purchasedAt: string }>; stats: AdminUserStats }
+export interface AdminUserUpdateInput { name?: string; addressBook?: UserAddressBook; emailNotificationsEnabled?: boolean; password?: string }
+export interface AdminRefundOrderInput { amount?: number; reason?: string }
+export interface BlogCollectionInput { tag?: string; label: string; description?: string }
+export interface BlogCollectionRecord { tag: string; label: string; description?: string; createdAt?: string; updatedAt?: string }
+export interface BlogArticleInput { title: string; slug: string; excerpt: string; blocks: BlogBlock[]; collectionTags?: string[]; published?: boolean }
+export interface BlogArticleRecord extends BlogArticleInput { articleId: string; collectionTags: string[]; published: boolean; createdAt?: string; updatedAt?: string }
+export interface MarketEventInput { title: string; location: string; address?: string; startsAt: string; endsAt?: string; description?: string; externalUrl?: string }
 export interface MarketEventRecord extends MarketEventInput { id: string }
 export interface ServiceHealthCheck { name: string; status: 'ok' | 'error'; message?: string }
 export interface ServiceHealthReport { status: 'ok' | 'degraded'; checkedAt: string; services: ServiceHealthCheck[] }
@@ -36,6 +46,10 @@ export interface AdminApiService {
   login(credentials: AdminCredentials): Promise<AdminLoginResult>
   listOrders(): Promise<OrderRecord[]>
   markOrderShipped(orderId: string): Promise<OrderRecord>
+  listUsers(): Promise<AdminUserAccount[]>
+  updateUser(email: string, input: AdminUserUpdateInput): Promise<AdminUserAccount>
+  deleteUser(email: string): Promise<void>
+  refundOrder(orderId: string, input: AdminRefundOrderInput): Promise<OrderRecord>
   listProducts(): Promise<ProductRecord[]>
   createProduct(input: CreateProductInput): Promise<ProductRecord>
   updateProduct(productId: string, input: UpdateProductInput): Promise<ProductRecord>
@@ -45,6 +59,10 @@ export interface AdminApiService {
   uploadPatternPdf(file: File): Promise<PatternPdfUploadResult>
   deletePatternPdf(objectKey: string): Promise<void>
   listBlogArticles(): Promise<BlogArticleRecord[]>
+  listBlogCollections(): Promise<BlogCollectionRecord[]>
+  createBlogCollection(input: BlogCollectionInput): Promise<BlogCollectionRecord>
+  updateBlogCollection(tag: string, input: Partial<BlogCollectionInput>): Promise<BlogCollectionRecord>
+  deleteBlogCollection(tag: string): Promise<void>
   createBlogArticle(input: BlogArticleInput): Promise<BlogArticleRecord>
   updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<BlogArticleRecord>
   deleteBlogArticle(articleId: string): Promise<void>
@@ -63,6 +81,10 @@ export class FetchAdminApiService implements AdminApiService {
   async login(credentials: AdminCredentials): Promise<AdminLoginResult> { return this.request<AdminLoginResult>('/admin/login', jsonInit('POST', credentials)) }
   async listOrders(): Promise<OrderRecord[]> { return (await this.request<{ orders: OrderRecord[] }>('/admin/orders')).orders }
   async markOrderShipped(orderId: string): Promise<OrderRecord> { return (await this.request<{ order: OrderRecord }>(`/admin/orders/${encodeURIComponent(orderId)}/status`, jsonInit('PATCH', { status: 'shipped' }))).order }
+  async listUsers(): Promise<AdminUserAccount[]> { return (await this.request<{ users: AdminUserAccount[] }>('/admin/users')).users }
+  async updateUser(email: string, input: AdminUserUpdateInput): Promise<AdminUserAccount> { return (await this.request<{ user: AdminUserAccount }>(`/admin/users/${encodeURIComponent(email)}`, jsonInit('PATCH', input))).user }
+  async deleteUser(email: string): Promise<void> { await this.request<void>(`/admin/users/${encodeURIComponent(email)}`, { method: 'DELETE' }) }
+  async refundOrder(orderId: string, input: AdminRefundOrderInput): Promise<OrderRecord> { return (await this.request<{ order: OrderRecord }>(`/admin/orders/${encodeURIComponent(orderId)}/refund`, jsonInit('POST', input))).order }
   async listProducts(): Promise<ProductRecord[]> { return (await this.request<{ products: ProductRecord[] }>('/admin/products')).products }
   async createProduct(input: CreateProductInput): Promise<ProductRecord> { return (await this.request<{ product: ProductRecord }>('/admin/products', jsonInit('POST', input))).product }
   async updateProduct(productId: string, input: UpdateProductInput): Promise<ProductRecord> { return (await this.request<{ product: ProductRecord }>(`/admin/products/${encodeURIComponent(productId)}`, jsonInit('PATCH', input))).product }
@@ -72,6 +94,10 @@ export class FetchAdminApiService implements AdminApiService {
   async uploadPatternPdf(file: File): Promise<PatternPdfUploadResult> { const body = new FormData(); body.set('file', file); return this.request<PatternPdfUploadResult>('/admin/pdfs/patterns', { method: 'POST', body }) }
   async deletePatternPdf(objectKey: string): Promise<void> { await this.request<void>(`/admin/pdfs/patterns/${encodeObjectKey(objectKey)}`, { method: 'DELETE' }) }
   async listBlogArticles(): Promise<BlogArticleRecord[]> { return (await this.request<{ articles: BlogArticleRecord[] }>('/admin/blog/articles')).articles }
+  async listBlogCollections(): Promise<BlogCollectionRecord[]> { return (await this.request<{ collections: BlogCollectionRecord[] }>('/admin/blog/collections')).collections }
+  async createBlogCollection(input: BlogCollectionInput): Promise<BlogCollectionRecord> { return (await this.request<{ collection: BlogCollectionRecord }>('/admin/blog/collections', jsonInit('POST', input))).collection }
+  async updateBlogCollection(tag: string, input: Partial<BlogCollectionInput>): Promise<BlogCollectionRecord> { return (await this.request<{ collection: BlogCollectionRecord }>(`/admin/blog/collections/${encodeURIComponent(tag)}`, jsonInit('PATCH', input))).collection }
+  async deleteBlogCollection(tag: string): Promise<void> { await this.request<void>(`/admin/blog/collections/${encodeURIComponent(tag)}`, { method: 'DELETE' }) }
   async createBlogArticle(input: BlogArticleInput): Promise<BlogArticleRecord> { return (await this.request<{ article: BlogArticleRecord }>('/admin/blog/articles', jsonInit('POST', input))).article }
   async updateBlogArticle(articleId: string, input: Partial<BlogArticleInput>): Promise<BlogArticleRecord> { return (await this.request<{ article: BlogArticleRecord }>(`/admin/blog/articles/${encodeURIComponent(articleId)}`, jsonInit('PATCH', input))).article }
   async deleteBlogArticle(articleId: string): Promise<void> { await this.request<void>(`/admin/blog/articles/${encodeURIComponent(articleId)}`, { method: 'DELETE' }) }

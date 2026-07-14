@@ -113,6 +113,7 @@ export interface MarketEventSummary {
   startsAt: string
   locationName?: string
   location?: string
+  address?: string
   endsAt?: string
   description?: string
   externalUrl?: string
@@ -127,21 +128,30 @@ export interface BlogImageBlock { type: 'image'; url: string; alt: string }
 export interface BlogYoutubeBlock { type: 'youtube'; videoId: string; title?: string }
 export type BlogArticleBlock = BlogHeadingBlock | BlogParagraphBlock | BlogImageBlock | BlogYoutubeBlock
 
+export const DEFAULT_BLOG_COLLECTION_TAG = 'kaylies-creations-updates'
+
+export interface BlogCollection {
+  tag: string
+  label: string
+  description?: string
+}
+
 export interface BlogArticle {
   articleId: string
   title: string
   slug: string
   excerpt: string
   blocks: BlogArticleBlock[]
+  collectionTags: string[]
   published: boolean
   createdAt?: string
   updatedAt?: string
 }
 
 export interface BlogArticleResponse { articles: BlogArticle[] }
+export interface BlogCollectionResponse { collections: BlogCollection[] }
 
 export interface HomeViewModel {
-  featuredProducts: Product[]
   nextMarket: MarketEventSummary | null
 }
 
@@ -237,9 +247,48 @@ export interface CheckoutEstimateResponse {
   currency: 'USD'
 }
 
+
+export interface CheckoutContact {
+  email: string
+  name: string
+  phone?: string
+}
+
+export interface CheckoutFullAddress {
+  name: string
+  line1: string
+  line2?: string
+  city: string
+  region: string
+  postalCode: string
+  country: string
+}
+
+export interface CheckoutBillingAddress extends CheckoutFullAddress {
+  sameAsShipping?: boolean
+}
+
+export interface CheckoutRequest {
+  idempotencyKey: string
+  contact: CheckoutContact
+  shippingAddress: CheckoutFullAddress
+  billingAddress: CheckoutBillingAddress
+  paymentStatus?: 'pending' | 'authorized' | 'paid' | 'failed'
+  paymentToken?: string
+}
+
+export interface CheckoutResult {
+  orderId: string
+  status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled' | 'refunded'
+  totals: { subtotal: number; discountTotal: number; shipping: number; tax: number; grandTotal: number }
+  purchasedPatternDownloadsAvailable: boolean
+}
+
 export interface ShopViewModel {
   products: Product[]
   filters: ShopProductFilters
+  sort: ProductSortKey
+  direction: ProductSortDirection
   nextCursor?: string
   hasMore: boolean
   selectedProduct: Product | null

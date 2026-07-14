@@ -3,12 +3,16 @@ import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID, scrypt as
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { SESSION_TTL_MS } from '@k_suite/shared';
+import { DEFAULT_BLOG_COLLECTION_TAG, SESSION_TTL_MS } from '@k_suite/shared';
 import type {
   AccessResult,
   AccessRuntime,
   AddUserInput,
+  AdminRefundOrderInput,
+  AdminUpdateUserInput,
+  AdminUserAccount,
   BlogArticleRecord,
+  BlogCollectionRecord,
   AdminLoginInput,
   AdminLoginResult,
   CartItemInput,
@@ -21,6 +25,7 @@ import type {
   ClientSessionState,
   CookieKind,
   CreateBlogArticleInput,
+  CreateBlogCollectionInput,
   CreateMarketEventInput,
   CreateProductInput,
   InsertOrderInput,
@@ -40,6 +45,7 @@ import type {
   PurchasedPatternRecord,
   PublicUser,
   UpdateBlogArticleInput,
+  UpdateBlogCollectionInput,
   UpdateCartItemInput,
   UpdateMarketEventInput,
   UpdateProductInput,
@@ -57,14 +63,17 @@ import { createMariaDbService } from './mariadb_service.js';
 import { NoopEmailService, type EmailService } from '../email/EmailService.js';
 import { createOrderEmailMessage } from '../email/OrderEmailTemplates.js';
 
-export type { AccessResult, AccessRuntime, AddUserInput, AdminLoginInput, AdminLoginResult, BlogArticleRecord, CartItemInput, CartResult, CartSnapshot, CheckoutEstimateRequest, CheckoutEstimateResponse, CheckoutRequest, CheckoutResult, ClientSessionState, CreateBlogArticleInput, MariaDbAccess, PublicUser, PurchasedPatternDownload, ServiceHealthReport, UpdateBlogArticleInput, UpdateUserInput, UserLoginInput, UserProfile };
+export type { AccessResult, AccessRuntime, AddUserInput, AdminLoginInput, AdminLoginResult, BlogArticleRecord, BlogCollectionRecord, CartItemInput, CartResult, CartSnapshot, CheckoutEstimateRequest, CheckoutEstimateResponse, CheckoutRequest, CheckoutResult, ClientSessionState, CreateBlogArticleInput, CreateBlogCollectionInput, MariaDbAccess, PublicUser, PurchasedPatternDownload, ServiceHealthReport, UpdateBlogArticleInput, UpdateBlogCollectionInput, UpdateUserInput, UserLoginInput, UserProfile };
 
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const defaultService = createMariaDbService();
 
 interface BackendConfig { admin: { name: string; email: string; password: string } }
-type BackendAccessRuntime = AccessRuntime & { emailService?: EmailService };
+interface CheckoutPaymentProcessor { charge(input: CheckoutPaymentInput): Promise<CheckoutPaymentResult> }
+interface CheckoutPaymentInput { idempotencyKey: string; amount: number; currency: 'USD'; paymentToken?: string }
+interface CheckoutPaymentResult { provider: 'test' | 'square'; status: 'paid' | 'failed'; transactionId?: string }
+type BackendAccessRuntime = AccessRuntime & { emailService?: EmailService; paymentProcessor?: CheckoutPaymentProcessor };
 
 export function createMariaDbAccess(service: MariaDbServiceLike = defaultService, runtime: BackendAccessRuntime = {}): MariaDbAccess {
   return {
@@ -78,6 +87,10 @@ export function createMariaDbAccess(service: MariaDbServiceLike = defaultService
     deleteUser: (email, cookie) => deleteUser(email, cookie, service),
     getOrders: (adminCookie) => getOrders(adminCookie, service),
     updateOrderStatus: (adminCookie, orderId, status) => updateOrderStatus(adminCookie, orderId, status, service, runtime),
+    listAdminUsers: (adminCookie) => listAdminUsers(adminCookie, service),
+    updateAdminUser: (adminCookie, email, input) => updateAdminUser(adminCookie, email, input, service),
+    deleteAdminUser: (adminCookie, email) => deleteAdminUser(adminCookie, email, service),
+    refundOrder: (adminCookie, orderId, input) => refundOrder(adminCookie, orderId, input, service, runtime),
     getServiceHealth: (adminCookie) => getServiceHealth(adminCookie, service),
     newCookie: (email, cookie, kind) => newCookie(email, cookie, kind, service, runtime),
     checkedout: (email, cookie, paidAmount) => checkedout(email, cookie, paidAmount, service, runtime),
@@ -86,7 +99,12 @@ export function createMariaDbAccess(service: MariaDbServiceLike = defaultService
     listAdminProducts: (adminCookie) => listAdminProducts(adminCookie, service),
     editProduct: (adminCookie, productId, productDTO) => editProduct(adminCookie, productId, productDTO, service),
     removeProduct: (adminCookie, productId) => removeProduct(adminCookie, productId, service),
+    listBlogCollections: (adminCookie) => listBlogCollections(adminCookie, service),
+    createBlogCollection: (adminCookie, input) => createBlogCollection(adminCookie, input, service),
+    updateBlogCollection: (adminCookie, tag, input) => updateBlogCollection(adminCookie, tag, input, service),
+    deleteBlogCollection: (adminCookie, tag) => deleteBlogCollection(adminCookie, tag, service),
     listBlogArticles: (adminCookie) => listBlogArticles(adminCookie, service),
+    listPublicBlogCollections: () => listPublicBlogCollections(service),
     listPublishedBlogArticles: () => listPublishedBlogArticles(service),
     createBlogArticle: (adminCookie, input) => createBlogArticle(adminCookie, input, service, runtime),
     updateBlogArticle: (adminCookie, articleId, input) => updateBlogArticle(adminCookie, articleId, input, service),
@@ -199,6 +217,33 @@ export async function deleteUser(email: string, cookie: string, service: MariaDb
   await service.deleteUser(user.email);
 }
 
+export async function listAdminUsers(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<AdminUserAccount[]> {
+  await requireAdminCookie(adminCookie, service);
+  return Promise.all((await service.listUsers()).map((user) => toAdminUserAccount(user, service)));
+}
+
+export async function updateAdminUser(adminCookie: string, email: string, input: AdminUpdateUserInput, service: MariaDbServiceLike = defaultService): Promise<AdminUserAccount> {
+  await requireAdminCookie(adminCookie, service);
+  const patch: UserPatch = {};
+  if (input.name !== undefined) patch.name = requireText(input.name, 'name');
+  if (input.addressBook !== undefined) patch.addressBook = input.addressBook;
+  if (input.emailNotificationsEnabled !== undefined) patch.emailNotificationsEnabled = input.emailNotificationsEnabled;
+  if (input.password !== undefined) { const salt = createSalt(); patch.salt = salt; patch.passwordHash = await hashPassword(requireText(input.password, 'password'), salt); }
+  return toAdminUserAccount(await service.updateUser(normalizeEmail(email), patch), service);
+}
+
+export async function deleteAdminUser(adminCookie: string, email: string, service: MariaDbServiceLike = defaultService): Promise<void> {
+  await requireAdminCookie(adminCookie, service);
+  await service.deleteUser(normalizeEmail(email));
+}
+
+export async function refundOrder(adminCookie: string, orderId: string, input: AdminRefundOrderInput, service: MariaDbServiceLike = defaultService, runtime: BackendAccessRuntime = {}): Promise<OrderRecord> {
+  await requireAdminCookie(adminCookie, service);
+  const order = await service.updateOrderStatus(orderId, 'refunded');
+  await sendOrderStatusEmail(order, runtime);
+  return { ...order, details: { ...order.details, refund: { amount: input.amount ?? order.chargedAmount, reason: optionalText(input.reason), refundedAt: now(runtime).toISOString() } } };
+}
+
 export async function getOrders(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<OrderRecord[]> { await requireAdminCookie(adminCookie, service); return service.listOrders(); }
 export async function updateOrderStatus(adminCookie: string, orderId: string, status: OrderStatus, service: MariaDbServiceLike = defaultService, runtime: BackendAccessRuntime = {}): Promise<OrderRecord> { await requireAdminCookie(adminCookie, service); assertValidOrderStatus(status); const order = await service.updateOrderStatus(orderId, status); if (status === 'paid' || status === 'fulfilled' || status === 'shipped') await grantPurchasedPatterns(order, service); await sendOrderStatusEmail(order, runtime); return order; }
 export async function getServiceHealth(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<ServiceHealthReport> { await requireAdminCookie(adminCookie, service); const checks = [{ name: 'database', status: 'ok' as const }, { name: 'objectStorage', status: 'ok' as const }]; return { status: checks.every((check) => check.status === 'ok') ? 'ok' : 'degraded', checkedAt: new Date().toISOString(), services: checks }; }
@@ -235,10 +280,15 @@ export async function addProduct(adminCookie: string, productDTO: CreateProductI
 export async function listAdminProducts(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<Product[]> { await requireAdminCookie(adminCookie, service); return service.listProducts(undefined, true); }
 export async function editProduct(adminCookie: string, productId: string, productDTO: UpdateProductInput, service: MariaDbServiceLike = defaultService): Promise<Product> { await requireAdminCookie(adminCookie, service); return service.updateProduct(productId, productDTO); }
 export async function removeProduct(adminCookie: string, productId: string, service: MariaDbServiceLike = defaultService): Promise<void> { await requireAdminCookie(adminCookie, service); await service.removeProduct(productId); }
+export async function listBlogCollections(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<BlogCollectionRecord[]> { await requireAdminCookie(adminCookie, service); return service.listBlogCollections(); }
+export async function createBlogCollection(adminCookie: string, input: CreateBlogCollectionInput, service: MariaDbServiceLike = defaultService): Promise<BlogCollectionRecord> { await requireAdminCookie(adminCookie, service); const label = requireText(input.label, 'collection label'); const tag = normalizeBlogCollectionTag(input.tag ?? label) || normalizeBlogCollectionTag(label); return service.insertBlogCollection({ ...input, tag, label, description: optionalText(input.description) }); }
+export async function updateBlogCollection(adminCookie: string, tag: string, input: UpdateBlogCollectionInput, service: MariaDbServiceLike = defaultService): Promise<BlogCollectionRecord> { await requireAdminCookie(adminCookie, service); const currentTag = normalizeBlogCollectionTag(tag); if (currentTag === DEFAULT_BLOG_COLLECTION_TAG && input.tag && normalizeBlogCollectionTag(input.tag) !== DEFAULT_BLOG_COLLECTION_TAG) throw new Error('Default blog collection tag cannot be changed.'); return service.updateBlogCollection(currentTag, { tag: input.tag === undefined ? undefined : normalizeBlogCollectionTag(input.tag), label: input.label === undefined ? undefined : requireText(input.label, 'collection label'), description: input.description === undefined ? undefined : optionalText(input.description) }); }
+export async function deleteBlogCollection(adminCookie: string, tag: string, service: MariaDbServiceLike = defaultService): Promise<void> { await requireAdminCookie(adminCookie, service); const normalized = normalizeBlogCollectionTag(tag); if (normalized === DEFAULT_BLOG_COLLECTION_TAG) throw new Error('Default blog collection cannot be deleted.'); await service.deleteBlogCollection(normalized); }
 export async function listBlogArticles(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<BlogArticleRecord[]> { await requireAdminCookie(adminCookie, service); return service.listBlogArticles(); }
+export async function listPublicBlogCollections(service: MariaDbServiceLike = defaultService): Promise<BlogCollectionRecord[]> { return service.listBlogCollections(); }
 export async function listPublishedBlogArticles(service: MariaDbServiceLike = defaultService): Promise<BlogArticleRecord[]> { return (await service.listBlogArticles()).filter((article) => article.published); }
-export async function createBlogArticle(adminCookie: string, input: CreateBlogArticleInput, service: MariaDbServiceLike = defaultService, runtime: AccessRuntime = {}): Promise<BlogArticleRecord> { await requireAdminCookie(adminCookie, service); validateBlogArticle(input); return service.insertBlogArticle({ ...input, articleId: createUuid(runtime), published: input.published ?? false }); }
-export async function updateBlogArticle(adminCookie: string, articleId: string, input: UpdateBlogArticleInput, service: MariaDbServiceLike = defaultService): Promise<BlogArticleRecord> { await requireAdminCookie(adminCookie, service); if (input.blocks) validateBlogBlocks(input.blocks); return service.updateBlogArticle(articleId, input); }
+export async function createBlogArticle(adminCookie: string, input: CreateBlogArticleInput, service: MariaDbServiceLike = defaultService, runtime: AccessRuntime = {}): Promise<BlogArticleRecord> { await requireAdminCookie(adminCookie, service); validateBlogArticle(input); return service.insertBlogArticle({ ...input, articleId: createUuid(runtime), collectionTags: normalizeBlogCollectionTags(input.collectionTags), published: input.published ?? false }); }
+export async function updateBlogArticle(adminCookie: string, articleId: string, input: UpdateBlogArticleInput, service: MariaDbServiceLike = defaultService): Promise<BlogArticleRecord> { await requireAdminCookie(adminCookie, service); if (input.blocks) validateBlogBlocks(input.blocks); return service.updateBlogArticle(articleId, { ...input, collectionTags: input.collectionTags === undefined ? undefined : normalizeBlogCollectionTags(input.collectionTags) }); }
 export async function deleteBlogArticle(adminCookie: string, articleId: string, service: MariaDbServiceLike = defaultService): Promise<void> { await requireAdminCookie(adminCookie, service); await service.deleteBlogArticle(articleId); }
 
 export async function listShopProducts(request: ShopProductBatchRequest, service: MariaDbServiceLike = defaultService): Promise<ShopProductBatchResponse> {
@@ -319,25 +369,27 @@ export async function checkout(input: CheckoutRequest, cookies: { sessionCookie?
   const shipping = subtotal >= 8_000 ? 0 : 800;
   const tax = Math.round(subtotal * taxRateFor(input.shippingAddress.region));
   const totals = { subtotal, discountTotal: 0, shipping, tax, grandTotal: subtotal + shipping + tax };
+  const payment = await chargeCheckoutPayment({ idempotencyKey: input.idempotencyKey, amount: totals.grandTotal, currency: 'USD', paymentToken: input.paymentToken }, runtime);
   const order = await service.insertOrder({
     orderId: createUuid(runtime),
     idempotencyKey: input.idempotencyKey,
     productId: lineItems[0].productId,
-    clientEmail: normalizeEmail(input.contact.email),
+    clientEmail: target.userEmail ?? normalizeEmail(input.contact.email),
     details: {
       contact: { ...input.contact, email: normalizeEmail(input.contact.email) },
       shippingAddress: input.shippingAddress,
       billingAddress: input.billingAddress,
-      payment: { token: input.paymentToken, status: input.paymentStatus ?? 'pending' },
+      payment: { provider: payment.provider, status: payment.status, transactionId: payment.transactionId, token: input.paymentToken },
       totals,
       lineItems,
     },
     clientInstructions: lineItems.map((item) => item.clientInstructions).filter(Boolean).join('\n'),
     chargedAmount: totals.grandTotal,
-    status: 'pending',
+    status: payment.status === 'paid' ? 'paid' : 'pending',
   });
 
   await target.save([]);
+  if (order.status === 'paid') await grantPurchasedPatterns(order, service);
   await sendOrderEmail('order_created', order, runtime);
   return toCheckoutResult(order);
 }
@@ -438,6 +490,8 @@ async function verifyPassword(password: string, salt: string, expectedHash: stri
 function toPublicUser(user: UserRecord): PublicUser { return { email: user.email, name: user.name, cart: user.cart, pdfKeys: user.pdfKeys }; }
 function toProfileUser(user: UserRecord) { return { email: user.email, name: user.name, addressBook: user.addressBook, emailNotificationsEnabled: user.emailNotificationsEnabled }; }
 function normalizeEmail(email: string): string { return email.trim().toLowerCase(); }
+function requireText(value: string | undefined, field: string): string { const trimmed = value?.trim() ?? ''; if (!trimmed) throw new Error(`${field} is required.`); return trimmed; }
+function optionalText(value: string | undefined): string | undefined { const trimmed = value?.trim(); return trimmed ? trimmed : undefined; }
 function assertRequired(value: string, field: string): void { if (!value || value.trim().length === 0) throw new Error(`${field} is required.`); }
 function createSalt(runtime: AccessRuntime = {}): string { return toToken(runtime.randomBytes?.(16) ?? nodeRandomBytes(16)); }
 function createCookie(runtime: AccessRuntime = {}): string { return toToken(runtime.randomBytes?.(32) ?? nodeRandomBytes(32)); }
@@ -453,19 +507,27 @@ async function toOrderLineItem(item: CartItem, service: MariaDbServiceLike) { co
 function itemIdForCartItem(item: CartItem): string { return [item.productId, item.colorVariation ?? item.selectedColor ?? '', item.selectedSize ?? ''].join(':'); }
 function isProductSize(value: unknown): value is ProductSize { return typeof value === 'string' && ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
 function taxRateFor(state?: string): number { return state?.toUpperCase() === 'CA' ? 0.0825 : 0; }
-async function getCartTarget(cookies: { sessionCookie?: string; clientCookie?: string }, service: MariaDbServiceLike, runtime: AccessRuntime): Promise<{ cookie: string; cookieName: 'session_cookie' | 'client_cookie'; cart: unknown[]; save: (cart: CartItem[]) => Promise<void> }> { if (cookies.clientCookie) { const cookieRecord = await service.findCookie(cookies.clientCookie); if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) { const user = await service.findUserByEmail(cookieRecord.email); if (user) return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, save: async (cart) => { await service.updateUser(user.email, { cart }); await service.touchCookie(cookies.clientCookie!, expiresAt(runtime)); } }; } } const sessionCookie = cookies.sessionCookie ?? createCookie(runtime); const guest = await service.findGuestByCookie(sessionCookie); if (guest && isExpired(guest.expiresAt, now(runtime))) await service.deleteGuest(sessionCookie); return { cookie: sessionCookie, cookieName: 'session_cookie', cart: guest && !isExpired(guest.expiresAt, now(runtime)) ? guest.cart : [], save: async (cart) => { await service.upsertGuestCart(sessionCookie, cart, expiresAt(runtime)); } }; }
-function assertValidOrderStatus(status: OrderStatus): void { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled'].includes(status)) throw new Error('Invalid order status.'); }
+async function getCartTarget(cookies: { sessionCookie?: string; clientCookie?: string }, service: MariaDbServiceLike, runtime: AccessRuntime): Promise<{ cookie: string; cookieName: 'session_cookie' | 'client_cookie'; cart: unknown[]; userEmail?: string; save: (cart: CartItem[]) => Promise<void> }> { if (cookies.clientCookie) { const cookieRecord = await service.findCookie(cookies.clientCookie); if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) { const user = await service.findUserByEmail(cookieRecord.email); if (user) return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, userEmail: user.email, save: async (cart) => { await service.updateUser(user.email, { cart }); await service.touchCookie(cookies.clientCookie!, expiresAt(runtime)); } }; } } const sessionCookie = cookies.sessionCookie ?? createCookie(runtime); const guest = await service.findGuestByCookie(sessionCookie); if (guest && isExpired(guest.expiresAt, now(runtime))) await service.deleteGuest(sessionCookie); return { cookie: sessionCookie, cookieName: 'session_cookie', cart: guest && !isExpired(guest.expiresAt, now(runtime)) ? guest.cart : [], save: async (cart) => { await service.upsertGuestCart(sessionCookie, cart, expiresAt(runtime)); } }; }
+function assertValidOrderStatus(status: OrderStatus): void { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled', 'refunded'].includes(status)) throw new Error('Invalid order status.'); }
 async function sendOrderStatusEmail(order: OrderRecord, runtime: BackendAccessRuntime): Promise<void> { if (order.status === 'fulfilled') await sendOrderEmail('order_fulfilled', order, runtime); if (order.status === 'shipped') await sendOrderEmail('order_shipped', order, runtime); if (order.status === 'cancelled') await sendOrderEmail('order_cancelled', order, runtime); }
 async function sendOrderEmail(event: 'order_created' | 'order_fulfilled' | 'order_shipped' | 'order_cancelled', order: OrderRecord, runtime: BackendAccessRuntime): Promise<void> { await (runtime.emailService ?? new NoopEmailService()).send(createOrderEmailMessage(event, order)); }
 function toCheckoutResult(order: OrderRecord): CheckoutResult { const totals = (order.details.totals ?? {}) as Partial<CheckoutResult['totals']>; return { orderId: order.orderId, status: order.status, totals: { subtotal: Number(totals.subtotal ?? 0), discountTotal: Number(totals.discountTotal ?? 0), shipping: Number(totals.shipping ?? 0), tax: Number(totals.tax ?? 0), grandTotal: Number(totals.grandTotal ?? order.chargedAmount) }, purchasedPatternDownloadsAvailable: order.status === 'paid' || order.status === 'fulfilled' || order.status === 'shipped' }; }
+async function chargeCheckoutPayment(input: CheckoutPaymentInput, runtime: BackendAccessRuntime): Promise<CheckoutPaymentResult> { return (runtime.paymentProcessor ?? createCheckoutPaymentProcessor()).charge(input); }
+function createCheckoutPaymentProcessor(): CheckoutPaymentProcessor { return process.env.CHECKOUT_PAYMENT_PROVIDER === 'square' ? new SquareCheckoutPaymentProcessor() : new TestCheckoutPaymentProcessor(); }
+class TestCheckoutPaymentProcessor implements CheckoutPaymentProcessor { async charge(input: CheckoutPaymentInput): Promise<CheckoutPaymentResult> { return { provider: 'test', status: 'paid', transactionId: `test-${input.idempotencyKey}` }; } }
+export class SquareCheckoutPaymentProcessor implements CheckoutPaymentProcessor { constructor(private readonly config = readSquarePaymentConfig()) {} async charge(): Promise<CheckoutPaymentResult> { throw new Error(`Square payment capture is not implemented yet for ${this.config.environment}. Configure SQUARE_APPLICATION_ID, SQUARE_LOCATION_ID, and SQUARE_ACCESS_TOKEN before enabling it.`); } }
+function readSquarePaymentConfig(): { applicationId?: string; locationId?: string; accessToken?: string; environment: string } { return { applicationId: process.env.SQUARE_APPLICATION_ID, locationId: process.env.SQUARE_LOCATION_ID, accessToken: process.env.SQUARE_ACCESS_TOKEN, environment: process.env.SQUARE_ENVIRONMENT ?? 'sandbox' }; }
 async function grantPurchasedPatterns(order: OrderRecord, service: MariaDbServiceLike): Promise<void> { for (const item of orderLineItems(order)) { if (item.productType === 'pattern' && typeof item.productId === 'string' && typeof item.pdfKey === 'string' && item.pdfKey) await service.insertPurchasedPattern({ userEmail: order.clientEmail, productId: item.productId, orderId: order.orderId, pdfKey: item.pdfKey }); } }
 function orderLineItems(order: OrderRecord): Array<Record<string, unknown>> { const lineItems = order.details.lineItems; return Array.isArray(lineItems) ? lineItems.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : []; }
 async function toPurchasedPatternDownloads(purchases: PurchasedPatternRecord[], service: MariaDbServiceLike): Promise<PurchasedPatternDownload[]> { return Promise.all(purchases.map((purchase) => toPurchasedPatternDownload(purchase, service))); }
 async function toPurchasedPatternDownload(purchase: PurchasedPatternRecord, service: MariaDbServiceLike): Promise<PurchasedPatternDownload> { const product = await service.findProductById(purchase.productId); return { productId: purchase.productId, orderId: purchase.orderId, title: product?.title ?? 'Purchased pattern', purchasedAt: purchase.purchasedAt ?? new Date() }; }
+async function toAdminUserAccount(user: UserRecord, service: MariaDbServiceLike): Promise<AdminUserAccount> { const orders = await service.listOrdersForUser(user.email); const purchasedPatterns = await toPurchasedPatternDownloads(await service.listPurchasedPatternsForUser(user.email), service); const refundedTotal = orders.filter((order) => order.status === 'refunded').reduce((sum, order) => sum + order.chargedAmount, 0); return { user: { ...toProfileUser(user), createdAt: user.createdAt, updatedAt: user.updatedAt }, orders, purchasedPatterns, stats: { orderCount: orders.length, totalSpent: orders.filter((order) => order.status !== 'cancelled' && order.status !== 'refunded').reduce((sum, order) => sum + order.chargedAmount, 0), refundedTotal, purchasedPatternCount: purchasedPatterns.length, cartItemCount: normalizeCart(user.cart).reduce((sum, item) => sum + item.quantity, 0) } }; }
 function validateBlogArticle(input: CreateBlogArticleInput): void { assertRequired(input.title, 'title'); assertRequired(input.slug, 'slug'); assertRequired(input.excerpt, 'excerpt'); validateBlogBlocks(input.blocks); }
 function validateBlogBlocks(blocks: unknown): void { if (!Array.isArray(blocks)) throw new Error('Invalid blog blocks.'); for (const block of blocks) { if (!block || typeof block !== 'object' || !('type' in block)) throw new Error('Invalid blog block.'); } }
-function validateMarketEvent(input: CreateMarketEventInput): void { assertRequired(input.title, 'title'); assertRequired(input.location, 'location'); assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined) assertValidDate(input.endsAt, 'endsAt'); }
-function validateMarketEventPatch(input: UpdateMarketEventInput): void { if (input.title !== undefined) assertRequired(input.title, 'title'); if (input.location !== undefined) assertRequired(input.location, 'location'); if (input.startsAt !== undefined) assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined) assertValidDate(input.endsAt, 'endsAt'); }
+function normalizeBlogCollectionTags(values: string[] | undefined): string[] { const tags = [...new Set((values ?? []).map(normalizeBlogCollectionTag).filter(Boolean))]; return tags.length ? tags : [DEFAULT_BLOG_COLLECTION_TAG]; }
+function normalizeBlogCollectionTag(value: string): string { return value.trim().toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+function validateMarketEvent(input: CreateMarketEventInput): void { assertRequired(input.title, 'title'); assertRequired(input.location, 'location'); if (input.address !== undefined) assertRequired(input.address, 'address'); assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined) assertValidDate(input.endsAt, 'endsAt'); }
+function validateMarketEventPatch(input: UpdateMarketEventInput): void { if (input.title !== undefined) assertRequired(input.title, 'title'); if (input.location !== undefined) assertRequired(input.location, 'location'); if (input.address !== undefined) assertRequired(input.address, 'address'); if (input.startsAt !== undefined) assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined) assertValidDate(input.endsAt, 'endsAt'); }
 function assertValidDate(value: Date | string, field: string): void { if (Number.isNaN(new Date(value).getTime())) throw new Error(`Invalid ${field}.`); }
 function roundCurrency(value: number): number { return Math.round(value * 100) / 100; }
 function now(runtime: AccessRuntime = {}): Date { return runtime.now?.() ?? new Date(); }

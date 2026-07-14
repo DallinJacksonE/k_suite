@@ -1,5 +1,5 @@
 import mariadb from 'mariadb';
-import { SESSION_TTL_MS } from '@k_suite/shared';
+import { DEFAULT_BLOG_COLLECTION_TAG, SESSION_TTL_MS } from '@k_suite/shared';
 export class MariaDbService {
     pool;
     constructor(pool) {
@@ -95,7 +95,7 @@ export class MariaDbService {
         details JSON NOT NULL,
         client_instructions TEXT NOT NULL,
         charged_amount DECIMAL(10,2) NOT NULL,
-        status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending',
+        status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled', 'refunded') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY idx_orders_idempotency_key (idempotency_key),
@@ -105,7 +105,7 @@ export class MariaDbService {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
         await this.pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255) NULL UNIQUE AFTER order_id');
-        await this.pool.query("ALTER TABLE orders MODIFY status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled') NOT NULL DEFAULT 'pending'");
+        await this.pool.query("ALTER TABLE orders MODIFY status ENUM('pending', 'paid', 'fulfilled', 'shipped', 'cancelled', 'refunded') NOT NULL DEFAULT 'pending'");
         await this.pool.query(`
       CREATE TABLE IF NOT EXISTS purchased_patterns (
         user_email VARCHAR(320) NOT NULL,
@@ -134,10 +134,31 @@ export class MariaDbService {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
         await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS blog_collections (
+        tag VARCHAR(128) PRIMARY KEY,
+        label VARCHAR(255) NOT NULL,
+        description TEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+        await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS blog_article_collections (
+        article_id CHAR(36) NOT NULL,
+        collection_tag VARCHAR(128) NOT NULL,
+        PRIMARY KEY (article_id, collection_tag),
+        INDEX idx_blog_article_collections_tag (collection_tag),
+        CONSTRAINT fk_blog_article_collections_article FOREIGN KEY (article_id) REFERENCES blog_articles(article_id) ON DELETE CASCADE,
+        CONSTRAINT fk_blog_article_collections_collection FOREIGN KEY (collection_tag) REFERENCES blog_collections(tag) ON DELETE CASCADE ON UPDATE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+        await this.seedDefaultBlogCollections();
+        await this.pool.query(`
       CREATE TABLE IF NOT EXISTS market_events (
         event_id CHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         location VARCHAR(255) NOT NULL,
+        address VARCHAR(1024) NULL,
         starts_at TIMESTAMP NOT NULL,
         ends_at TIMESTAMP NULL,
         description TEXT NULL,
@@ -147,6 +168,13 @@ export class MariaDbService {
         INDEX idx_market_events_starts_at (starts_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+        await this.pool.query('ALTER TABLE market_events ADD COLUMN IF NOT EXISTS address VARCHAR(1024) NULL AFTER location');
+    }
+    async seedDefaultBlogCollections() {
+        await this.pool.query(`INSERT INTO blog_collections (tag, label) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label)`, [DEFAULT_BLOG_COLLECTION_TAG, 'Kaylies Creations Updates']);
+        await this.pool.query(`INSERT INTO blog_collections (tag, label) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label)`, ['tutorials', 'Tutorials']);
     }
     async close() { await this.pool.end(); }
     async insertAdmin(input) {
@@ -167,6 +195,9 @@ export class MariaDbService {
     async findUserByEmail(email) {
         const row = await this.firstRow('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
         return row ? mapUser(row) : null;
+    }
+    async listUsers() {
+        return (await this.queryRows('SELECT * FROM users ORDER BY created_at DESC')).map(mapUser);
     }
     async updateUser(email, patch) {
         const assignments = [];
@@ -328,7 +359,7 @@ export class MariaDbService {
         return row ? mapMarketEvent(row) : null;
     }
     async insertMarketEvent(input) {
-        await this.pool.query(`INSERT INTO market_events (event_id, title, location, starts_at, ends_at, description, external_url) VALUES (?, ?, ?, ?, ?, ?, ?)`, [input.id, input.title, input.location, input.startsAt, input.endsAt ?? null, input.description ?? null, input.externalUrl ?? null]);
+        await this.pool.query(`INSERT INTO market_events (event_id, title, location, address, starts_at, ends_at, description, external_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [input.id, input.title, input.location, input.address ?? null, input.startsAt, input.endsAt ?? null, input.description ?? null, input.externalUrl ?? null]);
         const event = await this.findMarketEventById(input.id);
         if (!event)
             throw new Error(`Market event not found: ${input.id}`);
@@ -339,6 +370,7 @@ export class MariaDbService {
         const params = [];
         addSet(assignments, params, 'title', patch.title);
         addSet(assignments, params, 'location', patch.location);
+        addSet(assignments, params, 'address', patch.address);
         addSet(assignments, params, 'starts_at', patch.startsAt);
         addSet(assignments, params, 'ends_at', patch.endsAt);
         addSet(assignments, params, 'description', patch.description);
@@ -353,11 +385,41 @@ export class MariaDbService {
     async deleteMarketEvent(eventId) {
         await this.pool.query('DELETE FROM market_events WHERE event_id = ?', [eventId]);
     }
+    async listBlogCollections() {
+        return (await this.queryRows('SELECT * FROM blog_collections ORDER BY label ASC')).map(mapBlogCollection);
+    }
+    async insertBlogCollection(input) {
+        await this.pool.query(`INSERT INTO blog_collections (tag, label, description) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description)`, [input.tag, input.label, input.description ?? null]);
+        const collection = await this.findBlogCollectionByTag(input.tag);
+        if (!collection)
+            throw new Error(`Blog collection not found: ${input.tag}`);
+        return collection;
+    }
+    async updateBlogCollection(tag, patch) {
+        const assignments = [];
+        const params = [];
+        addSet(assignments, params, 'tag', patch.tag);
+        addSet(assignments, params, 'label', patch.label);
+        addSet(assignments, params, 'description', patch.description ?? (patch.description === undefined ? undefined : null));
+        if (assignments.length)
+            await this.pool.query(`UPDATE blog_collections SET ${assignments.join(', ')} WHERE tag = ?`, [...params, tag]);
+        const collection = await this.findBlogCollectionByTag(patch.tag ?? tag);
+        if (!collection)
+            throw new Error(`Blog collection not found: ${tag}`);
+        return collection;
+    }
+    async deleteBlogCollection(tag) {
+        await this.pool.query('DELETE FROM blog_article_collections WHERE collection_tag = ?', [tag]);
+        await this.pool.query('DELETE FROM blog_collections WHERE tag = ?', [tag]);
+    }
     async listBlogArticles() {
-        return (await this.queryRows('SELECT * FROM blog_articles ORDER BY created_at DESC')).map(mapBlogArticle);
+        const rows = await this.queryRows('SELECT * FROM blog_articles ORDER BY created_at DESC');
+        return Promise.all(rows.map(async (row) => mapBlogArticle(row, await this.listCollectionTagsForArticle(String(row.article_id)))));
     }
     async insertBlogArticle(input) {
         await this.pool.query(`INSERT INTO blog_articles (article_id, title, slug, excerpt, blocks, published) VALUES (?, ?, ?, ?, ?, ?)`, [input.articleId, input.title, input.slug, input.excerpt, stringifyJson(input.blocks), input.published ?? false]);
+        await this.replaceArticleCollectionTags(input.articleId, input.collectionTags);
         const article = await this.findBlogArticleById(input.articleId);
         if (!article)
             throw new Error(`Blog article not found: ${input.articleId}`);
@@ -373,17 +435,41 @@ export class MariaDbService {
         addSet(assignments, params, 'published', patch.published);
         if (assignments.length)
             await this.pool.query(`UPDATE blog_articles SET ${assignments.join(', ')} WHERE article_id = ?`, [...params, articleId]);
+        if (patch.collectionTags !== undefined)
+            await this.replaceArticleCollectionTags(articleId, patch.collectionTags);
         const article = await this.findBlogArticleById(articleId);
         if (!article)
             throw new Error(`Blog article not found: ${articleId}`);
         return article;
     }
     async deleteBlogArticle(articleId) {
+        await this.pool.query('DELETE FROM blog_article_collections WHERE article_id = ?', [articleId]);
         await this.pool.query('DELETE FROM blog_articles WHERE article_id = ?', [articleId]);
+    }
+    async findBlogCollectionByTag(tag) {
+        const row = await this.firstRow('SELECT * FROM blog_collections WHERE tag = ? LIMIT 1', [tag]);
+        return row ? mapBlogCollection(row) : null;
     }
     async findBlogArticleById(articleId) {
         const row = await this.firstRow('SELECT * FROM blog_articles WHERE article_id = ? LIMIT 1', [articleId]);
-        return row ? mapBlogArticle(row) : null;
+        return row ? mapBlogArticle(row, await this.listCollectionTagsForArticle(articleId)) : null;
+    }
+    async replaceArticleCollectionTags(articleId, tags) {
+        const normalized = tags?.length ? tags : [DEFAULT_BLOG_COLLECTION_TAG];
+        await this.pool.query('DELETE FROM blog_article_collections WHERE article_id = ?', [articleId]);
+        for (const tag of normalized) {
+            await this.ensureBlogCollection(tag);
+            await this.pool.query('INSERT INTO blog_article_collections (article_id, collection_tag) VALUES (?, ?) ON DUPLICATE KEY UPDATE collection_tag = VALUES(collection_tag)', [articleId, tag]);
+        }
+    }
+    async listCollectionTagsForArticle(articleId) {
+        const rows = await this.queryRows('SELECT collection_tag FROM blog_article_collections WHERE article_id = ? ORDER BY collection_tag ASC', [articleId]);
+        const tags = rows.map((row) => String(row.collection_tag));
+        return tags.length ? tags : [DEFAULT_BLOG_COLLECTION_TAG];
+    }
+    async ensureBlogCollection(tag) {
+        await this.pool.query(`INSERT INTO blog_collections (tag, label) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE tag = VALUES(tag)`, [tag, labelFromTag(tag)]);
     }
     async findMarketEventById(eventId) {
         const row = await this.firstRow('SELECT * FROM market_events WHERE event_id = ? LIMIT 1', [eventId]);
@@ -445,8 +531,9 @@ function mapProduct(row) {
 }
 function mapOrder(row) { return { orderId: String(row.order_id), idempotencyKey: row.idempotency_key === null || row.idempotency_key === undefined ? undefined : String(row.idempotency_key), productId: String(row.product_id), clientEmail: String(row.client_email), details: parseJsonObject(row.details), clientInstructions: String(row.client_instructions ?? ''), chargedAmount: Number(row.charged_amount), status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapPurchasedPattern(row) { return { userEmail: String(row.user_email), productId: String(row.product_id), orderId: String(row.order_id), pdfKey: String(row.pdf_key), purchasedAt: row.purchased_at }; }
-function mapMarketEvent(row) { return { id: String(row.event_id), title: String(row.title), location: String(row.location), startsAt: row.starts_at, endsAt: row.ends_at, description: row.description === null || row.description === undefined ? undefined : String(row.description), externalUrl: row.external_url === null || row.external_url === undefined ? undefined : String(row.external_url) }; }
-function mapBlogArticle(row) { return { articleId: String(row.article_id), title: String(row.title), slug: String(row.slug), excerpt: String(row.excerpt), blocks: parseBlogBlocks(row.blocks), published: Boolean(row.published), createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapMarketEvent(row) { return { id: String(row.event_id), title: String(row.title), location: String(row.location), address: row.address === null || row.address === undefined ? undefined : String(row.address), startsAt: row.starts_at, endsAt: row.ends_at, description: row.description === null || row.description === undefined ? undefined : String(row.description), externalUrl: row.external_url === null || row.external_url === undefined ? undefined : String(row.external_url) }; }
+function mapBlogCollection(row) { return { tag: String(row.tag), label: String(row.label), description: row.description === null || row.description === undefined ? undefined : String(row.description), createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapBlogArticle(row, collectionTags = [DEFAULT_BLOG_COLLECTION_TAG]) { return { articleId: String(row.article_id), title: String(row.title), slug: String(row.slug), excerpt: String(row.excerpt), blocks: parseBlogBlocks(row.blocks), collectionTags, published: Boolean(row.published), createdAt: row.created_at, updatedAt: row.updated_at }; }
 function parseBlogBlocks(value) { return parseJsonArray(value); }
 function stringifyJson(value) { return JSON.stringify(value); }
 function parseJsonArray(value) { const parsed = parseJson(value); return Array.isArray(parsed) ? parsed : []; }
@@ -468,3 +555,4 @@ function optionalNumber(value) { return value === null || value === undefined ? 
 function productSortColumn(sort) { if (sort === 'price')
     return 'price'; if (sort === 'title')
     return 'title'; return 'created_at'; }
+function labelFromTag(tag) { return tag.split('-').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' '); }

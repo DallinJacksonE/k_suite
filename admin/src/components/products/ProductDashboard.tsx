@@ -5,9 +5,10 @@ import type { ProductFormInput } from '../../presenter/AdminDashboardPresenter'
 import { Panel } from '../layout/Panel'
 
 interface ProductDashboardProps {
+  productType: ProductType
   products: ProductRecord[]
   busy: boolean
-  onCreate(input: ProductFormInput): void
+  onCreate(input: ProductFormInput): Promise<boolean> | boolean
   onUpdate(productId: string, input: UpdateProductInput): void
   onDelete(productId: string): void
   onUploadImage(file: File | null): Promise<string>
@@ -15,18 +16,24 @@ interface ProductDashboardProps {
   onRefresh(): void
 }
 
-export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete, onUploadImage, onUploadPdf, onRefresh }: ProductDashboardProps) {
-  const [productType, setProductType] = useState<ProductType>('plushie')
+export function ProductDashboard({ productType, products, busy, onCreate, onUpdate, onDelete, onUploadImage, onUploadPdf, onRefresh }: ProductDashboardProps) {
+  const productLabel = productType === 'plushie' ? 'plushie' : 'pattern'
+  const productTitle = productType === 'plushie' ? 'Plushie products' : 'Pattern products'
+  const productDescription = productType === 'plushie'
+    ? 'Add finished plushies or click an existing plushie to edit colors, sizes, and inventory inline.'
+    : 'Add downloadable pattern listings or click an existing pattern to edit the PDF and storefront copy inline.'
+  const visibleProducts = products.filter((product) => product.type === productType)
   const [thumbnailImage, setThumbnailImage] = useState('')
   const [pdfKey, setPdfKey] = useState('')
+  const [creatingProduct, setCreatingProduct] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [colorVariations, setColorVariations] = useState<ProductColorVariation[]>([{ name: '' }])
   const [sizes, setSizes] = useState<ProductSize[]>([])
 
-  const submitCreate = (event: FormEvent<HTMLFormElement>) => {
+  const submitCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const fields = new FormData(event.currentTarget)
-    onCreate({
+    const saved = await onCreate({
       type: productType,
       title: read(fields, 'title'),
       price: read(fields, 'price'),
@@ -35,13 +42,22 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
       description: read(fields, 'description'),
       thumbnailImage,
       available: fields.get('available') === 'on',
-      readyToShip: fields.get('readyToShip') === 'on',
-      sizes,
+      readyToShip: productType === 'plushie' && fields.get('readyToShip') === 'on',
+      sizes: productType === 'plushie' ? sizes : [],
       tags: read(fields, 'tags'),
-      inventoryCount: read(fields, 'inventoryCount'),
-      colorVariations,
-      pdfKey,
+      inventoryCount: productType === 'plushie' ? read(fields, 'inventoryCount') : undefined,
+      colorVariations: productType === 'plushie' ? colorVariations : [],
+      pdfKey: productType === 'pattern' ? pdfKey : '',
     })
+    if (saved) resetCreateForm()
+  }
+
+  const resetCreateForm = () => {
+    setThumbnailImage('')
+    setPdfKey('')
+    setColorVariations([{ name: '' }])
+    setSizes([])
+    setCreatingProduct(false)
   }
 
   const updateColorVariation = (index: number, patch: Partial<ProductColorVariation>) => {
@@ -52,59 +68,55 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
   }
   const toggleProduct = (productId: string) => {
     setSelectedProductId((current) => current === productId ? null : productId)
+    setCreatingProduct(false)
   }
 
   return (
     <div className="category-stack">
-      <Panel title="Create product listing" description="Upload images first; returned bucket URLs can be attached to the shop thumbnail and individual color variations.">
-        <form onSubmit={submitCreate} className="form-grid two-column">
-          <label>Type<select value={productType} onChange={(event) => setProductType(event.target.value as ProductType)}><option value="plushie">Plushie</option><option value="pattern">Pattern</option></select></label>
-          <label>Title<input name="title" required /></label>
-          <label>Price<input name="price" type="number" min="0.01" step="0.01" required /></label>
-          <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" /></label>
-          <label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" /></label>
-          <label>Tags<input name="tags" placeholder="featured, market" /></label>
-          <SizePicker sizes={sizes} onChange={setSizes} />
-          <label className="full-width">Description<textarea name="description" rows={4} required /></label>
-          <UploadControl label="Product image" accept="image/*" onUpload={async (file) => setThumbnailImage(await onUploadImage(file))} />
-          {thumbnailImage ? <img className="image-preview" src={thumbnailImage} alt="Uploaded product preview" /> : null}
-          {productType === 'plushie' ? (
-            <div className="full-width color-variation-stack">
-              <h3>Color variations</h3>
-              {colorVariations.map((variation, index) => (
-                <ColorVariationRow
-                  key={index}
-                  variation={variation}
-                  canRemove={colorVariations.length > 1}
-                  onChange={(patch) => updateColorVariation(index, patch)}
-                  onRemove={() => removeColorVariation(index)}
-                  onUploadImage={onUploadImage}
-                />
-              ))}
-              <button type="button" onClick={() => setColorVariations((current) => [...current, { name: '' }])}>Add color</button>
-              <label className="checkbox-label"><input name="readyToShip" type="checkbox" />Ready to ship</label>
-            </div>
-          ) : (
-            <><UploadControl label="Pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
-          )}
-          <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked />Available</label>
-          <label className="checkbox-label"><input name="isSaleItem" type="checkbox" />Sale item</label>
-          <button type="submit" disabled={busy}>Create product</button>
-        </form>
-      </Panel>
-
-      <Panel title="Current products" description="Click a product to open its edit form inline.">
-        <button type="button" onClick={onRefresh} disabled={busy}>Refresh products</button>
-        {products.length ? (
+      <Panel title={productTitle} description={productDescription}>
+        <div className="button-row">
+          <button type="button" onClick={() => { setCreatingProduct((current) => !current); setSelectedProductId(null) }} disabled={busy}>{creatingProduct ? `Close new ${productLabel} form` : `New ${productLabel}`}</button>
+          <button type="button" onClick={onRefresh} disabled={busy}>Refresh products</button>
+        </div>
+        {creatingProduct ? (
+          <div className="product-listing selected">
+            <form onSubmit={(event) => void submitCreate(event)} className="form-grid two-column">
+              <label>Title<input name="title" required /></label>
+              <label>Price<input name="price" type="number" min="0.01" step="0.01" required /></label>
+              <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" /></label>
+              <label>Tags<input name="tags" placeholder="featured, market" /></label>
+              {productType === 'plushie' ? <><label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" /></label><SizePicker sizes={sizes} onChange={setSizes} /></> : null}
+              <label className="full-width">Description<textarea name="description" rows={4} required /></label>
+              <UploadControl label="Product image" accept="image/*" onUpload={async (file) => setThumbnailImage(await onUploadImage(file))} />
+              {thumbnailImage ? <img className="image-preview" src={thumbnailImage} alt="Uploaded product preview" /> : null}
+              {productType === 'plushie' ? (
+                <div className="full-width color-variation-stack">
+                  <h3>Color variations</h3>
+                  {colorVariations.map((variation, index) => (
+                    <ColorVariationRow key={index} variation={variation} canRemove={colorVariations.length > 1} onChange={(patch) => updateColorVariation(index, patch)} onRemove={() => removeColorVariation(index)} onUploadImage={onUploadImage} />
+                  ))}
+                  <button type="button" onClick={() => setColorVariations((current) => [...current, { name: '' }])}>Add color</button>
+                  <label className="checkbox-label"><input name="readyToShip" type="checkbox" />Ready to ship</label>
+                </div>
+              ) : (
+                <><UploadControl label="Pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
+              )}
+              <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked />Available</label>
+              <label className="checkbox-label"><input name="isSaleItem" type="checkbox" />Sale item</label>
+              <div className="button-row full-width"><button type="submit" disabled={busy}>Create {productLabel}</button><button type="button" onClick={resetCreateForm} disabled={busy}>Cancel</button></div>
+            </form>
+          </div>
+        ) : null}
+        {visibleProducts.length ? (
           <ul className="result-list product-result-list">
-            {products.map((product) => {
+            {visibleProducts.map((product) => {
               const selected = selectedProductId === product.id
               return (
                 <li key={product.id} className={selected ? 'product-listing selected' : 'product-listing'}>
                   <button type="button" className="product-listing-summary" onClick={() => toggleProduct(product.id)} aria-expanded={selected}>
                     <span className="product-listing-main"><strong>{product.title}</strong><span>{product.type} · {product.id}</span></span>
                     <span>{product.isSaleItem ? `Sale ${formatPrice(product.salePrice ?? product.price)} · was ${formatPrice(product.price)}` : formatPrice(product.price)}</span>
-                    <span>{product.inventoryCount === undefined ? 'Inventory: unlimited' : `Inventory: ${product.inventoryCount}`}</span>
+                    {product.type === 'plushie' ? <span>{product.inventoryCount === undefined ? 'Inventory: unlimited' : `Inventory: ${product.inventoryCount}`}</span> : null}
                     <span>{product.description}</span>
                     {product.type === 'plushie' ? <span>{formatVariations(product.colorVariations ?? [])}</span> : null}
                     {product.thumbnailImage ? <img className="thumb-preview" src={product.thumbnailImage} alt="" /> : null}
@@ -115,7 +127,7 @@ export function ProductDashboard({ products, busy, onCreate, onUpdate, onDelete,
               )
             })}
           </ul>
-        ) : <p>No products loaded.</p>}
+        ) : <p>No {productLabel} products loaded.</p>}
       </Panel>
     </div>
   )
@@ -145,13 +157,13 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
       description: read(fields, 'description'),
       thumbnailImage,
       available: fields.get('available') === 'on',
-      sizes,
       tags: parseTags(read(fields, 'tags')),
-      inventoryCount: optionalNumber(read(fields, 'inventoryCount')),
     }
     if (product.type === 'plushie') {
       update.readyToShip = fields.get('readyToShip') === 'on'
       update.colorVariations = colorVariations
+      update.inventoryCount = optionalNumber(read(fields, 'inventoryCount'))
+      update.sizes = sizes
     }
     if (product.type === 'pattern') update.pdfKey = pdfKey
     onUpdate(product.id, update)
@@ -169,9 +181,8 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
       <label>Title<input name="title" defaultValue={product.title} required /></label>
       <label>Price<input name="price" type="number" min="0.01" step="0.01" defaultValue={product.price} required /></label>
       <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" defaultValue={product.salePrice ?? ''} /></label>
-      <label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" defaultValue={product.inventoryCount ?? ''} /></label>
       <label>Tags<input name="tags" defaultValue={product.tags?.join(', ') ?? ''} /></label>
-      <SizePicker sizes={sizes} onChange={setSizes} />
+      {product.type === 'plushie' ? <><label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" defaultValue={product.inventoryCount ?? ''} /></label><SizePicker sizes={sizes} onChange={setSizes} /></> : null}
       <label className="full-width">Description<textarea name="description" rows={3} defaultValue={product.description} required /></label>
       <UploadControl label="Replace product image" accept="image/*" onUpload={async (file) => setThumbnailImage(await onUploadImage(file))} />
       {thumbnailImage ? <img className="image-preview" src={thumbnailImage} alt="Selected product preview" /> : null}

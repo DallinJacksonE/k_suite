@@ -3,7 +3,7 @@ import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID, scrypt as
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { SESSION_TTL_MS } from '@k_suite/shared';
+import { DEFAULT_BLOG_COLLECTION_TAG, SESSION_TTL_MS } from '@k_suite/shared';
 import { createMariaDbService } from './mariadb_service.js';
 import { NoopEmailService } from '../email/EmailService.js';
 import { createOrderEmailMessage } from '../email/OrderEmailTemplates.js';
@@ -22,6 +22,10 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         deleteUser: (email, cookie) => deleteUser(email, cookie, service),
         getOrders: (adminCookie) => getOrders(adminCookie, service),
         updateOrderStatus: (adminCookie, orderId, status) => updateOrderStatus(adminCookie, orderId, status, service, runtime),
+        listAdminUsers: (adminCookie) => listAdminUsers(adminCookie, service),
+        updateAdminUser: (adminCookie, email, input) => updateAdminUser(adminCookie, email, input, service),
+        deleteAdminUser: (adminCookie, email) => deleteAdminUser(adminCookie, email, service),
+        refundOrder: (adminCookie, orderId, input) => refundOrder(adminCookie, orderId, input, service, runtime),
         getServiceHealth: (adminCookie) => getServiceHealth(adminCookie, service),
         newCookie: (email, cookie, kind) => newCookie(email, cookie, kind, service, runtime),
         checkedout: (email, cookie, paidAmount) => checkedout(email, cookie, paidAmount, service, runtime),
@@ -30,7 +34,12 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         listAdminProducts: (adminCookie) => listAdminProducts(adminCookie, service),
         editProduct: (adminCookie, productId, productDTO) => editProduct(adminCookie, productId, productDTO, service),
         removeProduct: (adminCookie, productId) => removeProduct(adminCookie, productId, service),
+        listBlogCollections: (adminCookie) => listBlogCollections(adminCookie, service),
+        createBlogCollection: (adminCookie, input) => createBlogCollection(adminCookie, input, service),
+        updateBlogCollection: (adminCookie, tag, input) => updateBlogCollection(adminCookie, tag, input, service),
+        deleteBlogCollection: (adminCookie, tag) => deleteBlogCollection(adminCookie, tag, service),
         listBlogArticles: (adminCookie) => listBlogArticles(adminCookie, service),
+        listPublicBlogCollections: () => listPublicBlogCollections(service),
         listPublishedBlogArticles: () => listPublishedBlogArticles(service),
         createBlogArticle: (adminCookie, input) => createBlogArticle(adminCookie, input, service, runtime),
         updateBlogArticle: (adminCookie, articleId, input) => updateBlogArticle(adminCookie, articleId, input, service),
@@ -147,6 +156,36 @@ export async function deleteUser(email, cookie, service = defaultService) {
     const user = await requireUserWithCookie(email, cookie, service, 'client');
     await service.deleteUser(user.email);
 }
+export async function listAdminUsers(adminCookie, service = defaultService) {
+    await requireAdminCookie(adminCookie, service);
+    return Promise.all((await service.listUsers()).map((user) => toAdminUserAccount(user, service)));
+}
+export async function updateAdminUser(adminCookie, email, input, service = defaultService) {
+    await requireAdminCookie(adminCookie, service);
+    const patch = {};
+    if (input.name !== undefined)
+        patch.name = requireText(input.name, 'name');
+    if (input.addressBook !== undefined)
+        patch.addressBook = input.addressBook;
+    if (input.emailNotificationsEnabled !== undefined)
+        patch.emailNotificationsEnabled = input.emailNotificationsEnabled;
+    if (input.password !== undefined) {
+        const salt = createSalt();
+        patch.salt = salt;
+        patch.passwordHash = await hashPassword(requireText(input.password, 'password'), salt);
+    }
+    return toAdminUserAccount(await service.updateUser(normalizeEmail(email), patch), service);
+}
+export async function deleteAdminUser(adminCookie, email, service = defaultService) {
+    await requireAdminCookie(adminCookie, service);
+    await service.deleteUser(normalizeEmail(email));
+}
+export async function refundOrder(adminCookie, orderId, input, service = defaultService, runtime = {}) {
+    await requireAdminCookie(adminCookie, service);
+    const order = await service.updateOrderStatus(orderId, 'refunded');
+    await sendOrderStatusEmail(order, runtime);
+    return { ...order, details: { ...order.details, refund: { amount: input.amount ?? order.chargedAmount, reason: optionalText(input.reason), refundedAt: now(runtime).toISOString() } } };
+}
 export async function getOrders(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listOrders(); }
 export async function updateOrderStatus(adminCookie, orderId, status, service = defaultService, runtime = {}) { await requireAdminCookie(adminCookie, service); assertValidOrderStatus(status); const order = await service.updateOrderStatus(orderId, status); if (status === 'paid' || status === 'fulfilled' || status === 'shipped')
     await grantPurchasedPatterns(order, service); await sendOrderStatusEmail(order, runtime); return order; }
@@ -190,11 +229,18 @@ export async function addProduct(adminCookie, productDTO, service = defaultServi
 export async function listAdminProducts(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listProducts(undefined, true); }
 export async function editProduct(adminCookie, productId, productDTO, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.updateProduct(productId, productDTO); }
 export async function removeProduct(adminCookie, productId, service = defaultService) { await requireAdminCookie(adminCookie, service); await service.removeProduct(productId); }
+export async function listBlogCollections(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listBlogCollections(); }
+export async function createBlogCollection(adminCookie, input, service = defaultService) { await requireAdminCookie(adminCookie, service); const label = requireText(input.label, 'collection label'); const tag = normalizeBlogCollectionTag(input.tag ?? label) || normalizeBlogCollectionTag(label); return service.insertBlogCollection({ ...input, tag, label, description: optionalText(input.description) }); }
+export async function updateBlogCollection(adminCookie, tag, input, service = defaultService) { await requireAdminCookie(adminCookie, service); const currentTag = normalizeBlogCollectionTag(tag); if (currentTag === DEFAULT_BLOG_COLLECTION_TAG && input.tag && normalizeBlogCollectionTag(input.tag) !== DEFAULT_BLOG_COLLECTION_TAG)
+    throw new Error('Default blog collection tag cannot be changed.'); return service.updateBlogCollection(currentTag, { tag: input.tag === undefined ? undefined : normalizeBlogCollectionTag(input.tag), label: input.label === undefined ? undefined : requireText(input.label, 'collection label'), description: input.description === undefined ? undefined : optionalText(input.description) }); }
+export async function deleteBlogCollection(adminCookie, tag, service = defaultService) { await requireAdminCookie(adminCookie, service); const normalized = normalizeBlogCollectionTag(tag); if (normalized === DEFAULT_BLOG_COLLECTION_TAG)
+    throw new Error('Default blog collection cannot be deleted.'); await service.deleteBlogCollection(normalized); }
 export async function listBlogArticles(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listBlogArticles(); }
+export async function listPublicBlogCollections(service = defaultService) { return service.listBlogCollections(); }
 export async function listPublishedBlogArticles(service = defaultService) { return (await service.listBlogArticles()).filter((article) => article.published); }
-export async function createBlogArticle(adminCookie, input, service = defaultService, runtime = {}) { await requireAdminCookie(adminCookie, service); validateBlogArticle(input); return service.insertBlogArticle({ ...input, articleId: createUuid(runtime), published: input.published ?? false }); }
+export async function createBlogArticle(adminCookie, input, service = defaultService, runtime = {}) { await requireAdminCookie(adminCookie, service); validateBlogArticle(input); return service.insertBlogArticle({ ...input, articleId: createUuid(runtime), collectionTags: normalizeBlogCollectionTags(input.collectionTags), published: input.published ?? false }); }
 export async function updateBlogArticle(adminCookie, articleId, input, service = defaultService) { await requireAdminCookie(adminCookie, service); if (input.blocks)
-    validateBlogBlocks(input.blocks); return service.updateBlogArticle(articleId, input); }
+    validateBlogBlocks(input.blocks); return service.updateBlogArticle(articleId, { ...input, collectionTags: input.collectionTags === undefined ? undefined : normalizeBlogCollectionTags(input.collectionTags) }); }
 export async function deleteBlogArticle(adminCookie, articleId, service = defaultService) { await requireAdminCookie(adminCookie, service); await service.deleteBlogArticle(articleId); }
 export async function listShopProducts(request, service = defaultService) {
     const filters = request.filters ?? {};
@@ -272,24 +318,27 @@ export async function checkout(input, cookies, service = defaultService, runtime
     const shipping = subtotal >= 8_000 ? 0 : 800;
     const tax = Math.round(subtotal * taxRateFor(input.shippingAddress.region));
     const totals = { subtotal, discountTotal: 0, shipping, tax, grandTotal: subtotal + shipping + tax };
+    const payment = await chargeCheckoutPayment({ idempotencyKey: input.idempotencyKey, amount: totals.grandTotal, currency: 'USD', paymentToken: input.paymentToken }, runtime);
     const order = await service.insertOrder({
         orderId: createUuid(runtime),
         idempotencyKey: input.idempotencyKey,
         productId: lineItems[0].productId,
-        clientEmail: normalizeEmail(input.contact.email),
+        clientEmail: target.userEmail ?? normalizeEmail(input.contact.email),
         details: {
             contact: { ...input.contact, email: normalizeEmail(input.contact.email) },
             shippingAddress: input.shippingAddress,
             billingAddress: input.billingAddress,
-            payment: { token: input.paymentToken, status: input.paymentStatus ?? 'pending' },
+            payment: { provider: payment.provider, status: payment.status, transactionId: payment.transactionId, token: input.paymentToken },
             totals,
             lineItems,
         },
         clientInstructions: lineItems.map((item) => item.clientInstructions).filter(Boolean).join('\n'),
         chargedAmount: totals.grandTotal,
-        status: 'pending',
+        status: payment.status === 'paid' ? 'paid' : 'pending',
     });
     await target.save([]);
+    if (order.status === 'paid')
+        await grantPurchasedPatterns(order, service);
     await sendOrderEmail('order_created', order, runtime);
     return toCheckoutResult(order);
 }
@@ -388,6 +437,9 @@ async function verifyPassword(password, salt, expectedHash) { const actual = Buf
 function toPublicUser(user) { return { email: user.email, name: user.name, cart: user.cart, pdfKeys: user.pdfKeys }; }
 function toProfileUser(user) { return { email: user.email, name: user.name, addressBook: user.addressBook, emailNotificationsEnabled: user.emailNotificationsEnabled }; }
 function normalizeEmail(email) { return email.trim().toLowerCase(); }
+function requireText(value, field) { const trimmed = value?.trim() ?? ''; if (!trimmed)
+    throw new Error(`${field} is required.`); return trimmed; }
+function optionalText(value) { const trimmed = value?.trim(); return trimmed ? trimmed : undefined; }
 function assertRequired(value, field) { if (!value || value.trim().length === 0)
     throw new Error(`${field} is required.`); }
 function createSalt(runtime = {}) { return toToken(runtime.randomBytes?.(16) ?? nodeRandomBytes(16)); }
@@ -417,11 +469,11 @@ async function getCartTarget(cookies, service, runtime) { if (cookies.clientCook
     if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) {
         const user = await service.findUserByEmail(cookieRecord.email);
         if (user)
-            return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, save: async (cart) => { await service.updateUser(user.email, { cart }); await service.touchCookie(cookies.clientCookie, expiresAt(runtime)); } };
+            return { cookie: cookies.clientCookie, cookieName: 'client_cookie', cart: user.cart, userEmail: user.email, save: async (cart) => { await service.updateUser(user.email, { cart }); await service.touchCookie(cookies.clientCookie, expiresAt(runtime)); } };
     }
 } const sessionCookie = cookies.sessionCookie ?? createCookie(runtime); const guest = await service.findGuestByCookie(sessionCookie); if (guest && isExpired(guest.expiresAt, now(runtime)))
     await service.deleteGuest(sessionCookie); return { cookie: sessionCookie, cookieName: 'session_cookie', cart: guest && !isExpired(guest.expiresAt, now(runtime)) ? guest.cart : [], save: async (cart) => { await service.upsertGuestCart(sessionCookie, cart, expiresAt(runtime)); } }; }
-function assertValidOrderStatus(status) { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled'].includes(status))
+function assertValidOrderStatus(status) { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled', 'refunded'].includes(status))
     throw new Error('Invalid order status.'); }
 async function sendOrderStatusEmail(order, runtime) { if (order.status === 'fulfilled')
     await sendOrderEmail('order_fulfilled', order, runtime); if (order.status === 'shipped')
@@ -429,6 +481,19 @@ async function sendOrderStatusEmail(order, runtime) { if (order.status === 'fulf
     await sendOrderEmail('order_cancelled', order, runtime); }
 async function sendOrderEmail(event, order, runtime) { await (runtime.emailService ?? new NoopEmailService()).send(createOrderEmailMessage(event, order)); }
 function toCheckoutResult(order) { const totals = (order.details.totals ?? {}); return { orderId: order.orderId, status: order.status, totals: { subtotal: Number(totals.subtotal ?? 0), discountTotal: Number(totals.discountTotal ?? 0), shipping: Number(totals.shipping ?? 0), tax: Number(totals.tax ?? 0), grandTotal: Number(totals.grandTotal ?? order.chargedAmount) }, purchasedPatternDownloadsAvailable: order.status === 'paid' || order.status === 'fulfilled' || order.status === 'shipped' }; }
+async function chargeCheckoutPayment(input, runtime) { return (runtime.paymentProcessor ?? createCheckoutPaymentProcessor()).charge(input); }
+function createCheckoutPaymentProcessor() { return process.env.CHECKOUT_PAYMENT_PROVIDER === 'square' ? new SquareCheckoutPaymentProcessor() : new TestCheckoutPaymentProcessor(); }
+class TestCheckoutPaymentProcessor {
+    async charge(input) { return { provider: 'test', status: 'paid', transactionId: `test-${input.idempotencyKey}` }; }
+}
+export class SquareCheckoutPaymentProcessor {
+    config;
+    constructor(config = readSquarePaymentConfig()) {
+        this.config = config;
+    }
+    async charge() { throw new Error(`Square payment capture is not implemented yet for ${this.config.environment}. Configure SQUARE_APPLICATION_ID, SQUARE_LOCATION_ID, and SQUARE_ACCESS_TOKEN before enabling it.`); }
+}
+function readSquarePaymentConfig() { return { applicationId: process.env.SQUARE_APPLICATION_ID, locationId: process.env.SQUARE_LOCATION_ID, accessToken: process.env.SQUARE_ACCESS_TOKEN, environment: process.env.SQUARE_ENVIRONMENT ?? 'sandbox' }; }
 async function grantPurchasedPatterns(order, service) { for (const item of orderLineItems(order)) {
     if (item.productType === 'pattern' && typeof item.productId === 'string' && typeof item.pdfKey === 'string' && item.pdfKey)
         await service.insertPurchasedPattern({ userEmail: order.clientEmail, productId: item.productId, orderId: order.orderId, pdfKey: item.pdfKey });
@@ -436,17 +501,22 @@ async function grantPurchasedPatterns(order, service) { for (const item of order
 function orderLineItems(order) { const lineItems = order.details.lineItems; return Array.isArray(lineItems) ? lineItems.filter((item) => !!item && typeof item === 'object') : []; }
 async function toPurchasedPatternDownloads(purchases, service) { return Promise.all(purchases.map((purchase) => toPurchasedPatternDownload(purchase, service))); }
 async function toPurchasedPatternDownload(purchase, service) { const product = await service.findProductById(purchase.productId); return { productId: purchase.productId, orderId: purchase.orderId, title: product?.title ?? 'Purchased pattern', purchasedAt: purchase.purchasedAt ?? new Date() }; }
+async function toAdminUserAccount(user, service) { const orders = await service.listOrdersForUser(user.email); const purchasedPatterns = await toPurchasedPatternDownloads(await service.listPurchasedPatternsForUser(user.email), service); const refundedTotal = orders.filter((order) => order.status === 'refunded').reduce((sum, order) => sum + order.chargedAmount, 0); return { user: { ...toProfileUser(user), createdAt: user.createdAt, updatedAt: user.updatedAt }, orders, purchasedPatterns, stats: { orderCount: orders.length, totalSpent: orders.filter((order) => order.status !== 'cancelled' && order.status !== 'refunded').reduce((sum, order) => sum + order.chargedAmount, 0), refundedTotal, purchasedPatternCount: purchasedPatterns.length, cartItemCount: normalizeCart(user.cart).reduce((sum, item) => sum + item.quantity, 0) } }; }
 function validateBlogArticle(input) { assertRequired(input.title, 'title'); assertRequired(input.slug, 'slug'); assertRequired(input.excerpt, 'excerpt'); validateBlogBlocks(input.blocks); }
 function validateBlogBlocks(blocks) { if (!Array.isArray(blocks))
     throw new Error('Invalid blog blocks.'); for (const block of blocks) {
     if (!block || typeof block !== 'object' || !('type' in block))
         throw new Error('Invalid blog block.');
 } }
-function validateMarketEvent(input) { assertRequired(input.title, 'title'); assertRequired(input.location, 'location'); assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined)
+function normalizeBlogCollectionTags(values) { const tags = [...new Set((values ?? []).map(normalizeBlogCollectionTag).filter(Boolean))]; return tags.length ? tags : [DEFAULT_BLOG_COLLECTION_TAG]; }
+function normalizeBlogCollectionTag(value) { return value.trim().toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+function validateMarketEvent(input) { assertRequired(input.title, 'title'); assertRequired(input.location, 'location'); if (input.address !== undefined)
+    assertRequired(input.address, 'address'); assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined)
     assertValidDate(input.endsAt, 'endsAt'); }
 function validateMarketEventPatch(input) { if (input.title !== undefined)
     assertRequired(input.title, 'title'); if (input.location !== undefined)
-    assertRequired(input.location, 'location'); if (input.startsAt !== undefined)
+    assertRequired(input.location, 'location'); if (input.address !== undefined)
+    assertRequired(input.address, 'address'); if (input.startsAt !== undefined)
     assertValidDate(input.startsAt, 'startsAt'); if (input.endsAt !== undefined)
     assertValidDate(input.endsAt, 'endsAt'); }
 function assertValidDate(value, field) { if (Number.isNaN(new Date(value).getTime()))

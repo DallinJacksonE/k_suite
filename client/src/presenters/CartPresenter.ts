@@ -1,7 +1,8 @@
-import type { CartSnapshot, CheckoutEstimateRequest, CheckoutEstimateResponse, UpdateCartItemInput } from '../service/ClientTypes'
+import type { CartLineItemSnapshot, CartSnapshot, CheckoutEstimateRequest, CheckoutEstimateResponse, CheckoutRequest, CheckoutResult, UpdateCartItemInput } from '../service/ClientTypes'
 
 export interface CartViewModel extends CartSnapshot {
   estimate?: CheckoutEstimateResponse
+  checkoutResult?: CheckoutResult
 }
 
 export interface CartPresenterView {
@@ -13,7 +14,9 @@ export interface CartPresenterView {
 export interface CartService {
   getCart(): Promise<CartSnapshot>
   updateCartItem(itemId: string, input: UpdateCartItemInput): Promise<CartSnapshot>
+  removeCartItem(productType: CartLineItemSnapshot['productType'], itemId: string): Promise<CartSnapshot>
   estimateCheckout(input: CheckoutEstimateRequest): Promise<CheckoutEstimateResponse>
+  checkout(input: CheckoutRequest): Promise<CheckoutResult>
 }
 
 export class CartPresenter {
@@ -47,9 +50,25 @@ export class CartPresenter {
     })
   }
 
+  async removeItem(item: CartLineItemSnapshot): Promise<void> {
+    await this.run(async () => {
+      this.model = { ...await this.service.removeCartItem(item.productType, item.itemId), estimate: this.model.estimate }
+      this.publish()
+    })
+  }
+
   async estimate(input: CheckoutEstimateRequest): Promise<void> {
     await this.run(async () => {
       this.model = { ...this.model, estimate: await this.service.estimateCheckout(input) }
+      this.publish()
+    })
+  }
+
+
+  async checkout(input: Omit<CheckoutRequest, 'idempotencyKey' | 'paymentStatus' | 'paymentToken'>): Promise<void> {
+    await this.run(async () => {
+      const checkoutResult = await this.service.checkout({ ...input, idempotencyKey: createCheckoutKey(), paymentStatus: 'paid', paymentToken: 'test-checkout-token' })
+      this.model = { ...await this.service.getCart(), checkoutResult }
       this.publish()
     })
   }
@@ -69,4 +88,9 @@ export class CartPresenter {
   private publish(): void {
     this.view?.setCart(this.model)
   }
+}
+
+
+function createCheckoutKey(): string {
+  return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }

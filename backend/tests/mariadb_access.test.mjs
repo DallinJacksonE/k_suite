@@ -33,6 +33,7 @@ class FakeService {
     this.products = new Map();
     this.orders = [];
     this.purchasedPatterns = [];
+    this.blogCollections = new Map([['kaylies-creations-updates', { tag: 'kaylies-creations-updates', label: 'Kaylies Creations Updates' }], ['tutorials', { tag: 'tutorials', label: 'Tutorials' }]]);
     this.blogArticles = [];
     this.marketEvents = new Map();
   }
@@ -67,7 +68,14 @@ class FakeService {
   async deleteExpiredGuests(now) { for (const [guestCookie, record] of this.guests) if (record.expiresAt <= now) this.guests.delete(guestCookie); }
   async removeProduct(productId) { await this.updateProduct(productId, { available: false }); }
   async listProducts(productType, includeUnavailable = false) { return [...this.products.values()].filter((product) => (!productType || product.type === productType) && (includeUnavailable || product.available)); }
-  async listBlogArticles() { return this.blogArticles; }
+  async listBlogCollections() { return [...this.blogCollections.values()]; }
+  async insertBlogCollection(input) { const record = { ...input }; this.blogCollections.set(record.tag, record); return record; }
+  async updateBlogCollection(tag, patch) { const current = this.blogCollections.get(tag); const next = { ...current, ...patch }; if (patch.tag && patch.tag !== tag) this.blogCollections.delete(tag); this.blogCollections.set(next.tag, next); return next; }
+  async deleteBlogCollection(tag) { this.blogCollections.delete(tag); }
+  async listBlogArticles() { return this.blogArticles.map((article) => ({ ...article, collectionTags: article.collectionTags?.length ? article.collectionTags : ['kaylies-creations-updates'] })); }
+  async insertBlogArticle(input) { const article = { ...input, collectionTags: input.collectionTags?.length ? input.collectionTags : ['kaylies-creations-updates'] }; this.blogArticles.push(article); return article; }
+  async updateBlogArticle(articleId, patch) { const index = this.blogArticles.findIndex((article) => article.articleId === articleId); this.blogArticles[index] = { ...this.blogArticles[index], ...patch, collectionTags: patch.collectionTags ?? this.blogArticles[index].collectionTags ?? ['kaylies-creations-updates'] }; return this.blogArticles[index]; }
+  async deleteBlogArticle(articleId) { this.blogArticles = this.blogArticles.filter((article) => article.articleId !== articleId); }
   async listMarketEvents() { return [...this.marketEvents.values()]; }
   async insertMarketEvent(input) { this.marketEvents.set(input.id, input); return input; }
   async updateMarketEvent(eventId, patch) { const event = { ...this.marketEvents.get(eventId), ...patch }; this.marketEvents.set(eventId, event); return event; }
@@ -142,7 +150,7 @@ test('checkedout moves cart products into pending orders and clears the cart', a
   assert.deepEqual((await service.findUserByEmail('a@example.com')).cart, []);
 });
 
-test('checkout creates one pending order snapshot, clears cart, and is idempotent', async () => {
+test('checkout processes cart as paid in test mode, clears cart, and is idempotent', async () => {
   const service = new FakeService();
   const sentEmails = [];
   await service.insertProduct({ id: 'p1', type: 'plushie', title: 'Plushie', price: 1000, salePrice: 900, isSaleItem: true, readyToShip: true, description: 'Plushie', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], inventoryCount: 2 });
@@ -152,7 +160,9 @@ test('checkout creates one pending order snapshot, clears cart, and is idempoten
   const duplicate = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-2' });
 
   assert.equal(result.orderId, 'order-1');
-  assert.equal(result.status, 'pending');
+  assert.equal(result.status, 'paid');
+  assert.equal(service.orders[0].details.payment.status, 'paid');
+  assert.equal(service.orders[0].details.payment.provider, 'test');
   assert.equal(result.totals.subtotal, 1800);
   assert.equal(service.orders.length, 1);
   assert.equal(service.orders[0].clientEmail, 'ada@example.com');
@@ -164,7 +174,7 @@ test('checkout creates one pending order snapshot, clears cart, and is idempoten
   assert.equal(sentEmails[0].to, 'ada@example.com');
 });
 
-test('checkout keeps pattern orders pending until payment is confirmed', async () => {
+test('checkout grants pattern downloads after test-mode payment succeeds', async () => {
   const service = new FakeService();
   await addUser({ email: 'a@example.com', name: 'Ada', password: 'correct horse' }, service, { randomBytes: () => 'client-1' });
   await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 500, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
@@ -172,17 +182,18 @@ test('checkout keeps pattern orders pending until payment is confirmed', async (
 
   const result = await checkout({ ...checkoutRequest(), idempotencyKey: 'pattern-key' }, { clientCookie: 'client-1' }, service, { randomUUID: () => 'pattern-order' });
 
-  assert.equal(result.status, 'pending');
-  assert.equal(result.purchasedPatternDownloadsAvailable, false);
+  assert.equal(result.status, 'paid');
+  assert.equal(result.purchasedPatternDownloadsAvailable, true);
   assert.equal(service.orders[0].details.lineItems[0].pdfKey, 'pdfs/patterns/p.pdf');
+  assert.equal((await service.listPurchasedPatternsForUser('a@example.com'))[0].pdfKey, 'pdfs/patterns/p.pdf');
   assert.deepEqual((await service.findUserByEmail('a@example.com')).cart, []);
 });
 
 test('listPublishedBlogArticles only exposes published articles', async () => {
   const service = new FakeService();
   service.blogArticles.push(
-    { articleId: 'published', title: 'Published', slug: 'published', excerpt: 'Visible', blocks: [], published: true },
-    { articleId: 'draft', title: 'Draft', slug: 'draft', excerpt: 'Hidden', blocks: [], published: false },
+    { articleId: 'published', title: 'Published', slug: 'published', excerpt: 'Visible', blocks: [], collectionTags: ['tutorials'], published: true },
+    { articleId: 'draft', title: 'Draft', slug: 'draft', excerpt: 'Hidden', blocks: [], collectionTags: ['tutorials'], published: false },
   );
 
   const articles = await listPublishedBlogArticles(service);
@@ -195,14 +206,15 @@ test('admin market events require admin access and support create update delete'
   await service.insertAdmin({ email: 'admin@example.com', name: 'Admin', passwordHash: 'hash', salt: 'salt' });
   await newCookie('admin@example.com', undefined, 'admin', service, { randomBytes: () => 'admin-cookie' });
 
-  const created = await createMarketEvent('admin-cookie', { title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' }, service, { randomUUID: () => 'market-1' });
+  const created = await createMarketEvent('admin-cookie', { title: 'Market', location: 'Town Square', address: '123 Market St, Pittsburgh, PA', startsAt: '2026-07-04T10:00:00.000Z' }, service, { randomUUID: () => 'market-1' });
   const listed = await listAdminMarketEvents('admin-cookie', service);
-  const updated = await updateMarketEvent('admin-cookie', 'market-1', { location: 'City Hall' }, service);
+  const updated = await updateMarketEvent('admin-cookie', 'market-1', { address: '456 City Hall Ave' }, service);
   await deleteMarketEvent('admin-cookie', 'market-1', service);
 
   assert.equal(created.id, 'market-1');
+  assert.equal(created.address, '123 Market St, Pittsburgh, PA');
   assert.equal(listed.length, 1);
-  assert.equal(updated.location, 'City Hall');
+  assert.equal(updated.address, '456 City Hall Ave');
   assert.equal((await service.listMarketEvents()).length, 0);
   await assert.rejects(() => createMarketEvent('', { title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' }, service), /Admin access required/);
 });

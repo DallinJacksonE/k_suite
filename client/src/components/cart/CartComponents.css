@@ -1,0 +1,221 @@
+.cartItemRow,
+.cartSummary {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3xl);
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-muted) 12%);
+  box-shadow: var(--shadow);
+}
+
+.cartItemRow {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) auto auto;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-5);
+}
+
+.cartItemImage {
+  width: 104px;
+  aspect-ratio: 1;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  background: var(--media-bg);
+}
+
+.cartItemDetails {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cartItemDetails h2,
+.cartItemDetails p,
+.cartItemTotal {
+  margin: 0;
+}
+
+.cartItemType {
+  width: fit-content;
+  border-radius: var(--badge-radius);
+  padding: var(--badge-padding);
+  color: var(--badge-text);
+  background: var(--badge-bg);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.cartItemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: 0.92rem;
+}
+
+.cartItemMeta span,
+.cartItemNotes {
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.55rem;
+  background: var(--surface-muted);
+}
+
+.cartItemNotes {
+  color: var(--color-muted);
+}
+
+.cartQuantityControl {
+  display: inline-grid;
+  grid-template-columns: 2.25rem 2.5rem 2.25rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.cartQuantityControl button {
+  display: grid;
+  height: 2.25rem;
+  place-items: center;
+  border: 0;
+  color: var(--color-heading);
+  background: transparent;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cartQuantityControl button:hover,
+.cartQuantityControl button:focus-visible {
+  color: var(--color-brand);
+  background: color-mix(in srgb, var(--surface-muted) 72%, white 28%);
+}
+
+.cartQuantityControl span {
+  text-align: center;
+  color: var(--color-heading);
+  font-weight: 900;
+}
+
+.cartItemTotal {
+  justify-self: end;
+  color: var(--color-heading);
+  font-weight: 900;
+}
+
+.cartSummary {
+  position: sticky;
+  top: var(--space-5);
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+}
+
+.cartSummary h2,
+.cartSummary p {
+  margin: 0;
+}
+
+.cartSummary dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.cartSummary dl div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.cartSummary dt,
+.cartSummary dd {
+  margin: 0;
+}
+
+.cartSummary dt {
+  color: var(--color-muted);
+}
+
+.cartSummary dd {
+  color: var(--color-heading);
+  font-weight: 900;
+}
+
+.cartSummaryTotal {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  font-size: 1.1rem;
+}
+
+.cartSummaryNotice {
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  color: var(--color-muted);
+  background: var(--surface-muted);
+}
+
+.cartSummarySecondaryButton,
+.cartSummaryCheckoutButton {
+  width: 100%;
+  min-height: 2.8rem;
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cartSummarySecondaryButton {
+  border: 1px solid var(--border);
+  color: var(--color-heading);
+  background: var(--surface-muted);
+}
+
+.cartSummaryCheckoutButton {
+  border: 0;
+  color: var(--color-button-text, white);
+  background: var(--color-brand);
+  box-shadow: var(--shadow);
+}
+
+.cartSummaryCheckoutButton:disabled {
+  color: var(--color-muted);
+  background: var(--surface-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .cartItemRow {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .cartQuantityControl,
+  .cartItemTotal {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .cartSummary {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .cartItemRow {
+    grid-template-columns: 1fr;
+  }
+
+  .cartItemImage {
+    width: 100%;
+    max-height: 240px;
+  }
+
+  .cartQuantityControl,
+  .cartItemTotal {
+    grid-column: auto;
+  }
+}

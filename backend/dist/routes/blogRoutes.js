@@ -6,6 +6,9 @@ export function createBlogRouter(deps = {}) {
     router.get('/articles', asyncHandler(async (_req, res) => {
         res.json({ articles: await access.listPublishedBlogArticles() });
     }));
+    router.get('/collections', asyncHandler(async (_req, res) => {
+        res.json({ collections: await access.listPublicBlogCollections() });
+    }));
     return router;
 }
 export const blogRouter = createBlogRouter();

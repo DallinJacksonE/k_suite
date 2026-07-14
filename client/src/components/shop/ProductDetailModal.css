@@ -1,0 +1,197 @@
+.productDetailModal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: clamp(var(--space-4), 4vw, var(--space-9));
+  background: var(--modal-overlay);
+  cursor: pointer;
+}
+
+.productDetailModalPanel {
+  position: relative;
+  display: grid;
+  width: min(720px, 100%);
+  max-height: calc(100svh - calc(var(--space-5) * 2));
+  overflow: auto;
+  gap: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: clamp(var(--space-5), 4vw, var(--space-9));
+  color: var(--color-text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: default;
+}
+
+.productDetailModalClose {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  justify-self: end;
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0;
+  color: var(--color-heading);
+  background: color-mix(in srgb, var(--surface-muted) 82%, white 18%);
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.productDetailModalClose:hover,
+.productDetailModalClose:focus-visible {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.productDetailModalPanel label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-muted);
+  font-weight: 800;
+}
+
+.productDetailModalPanel input,
+.productDetailModalPanel select,
+.productDetailModalPanel textarea {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.8rem;
+  color: var(--color-heading);
+  background: var(--surface-muted);
+  font: inherit;
+}
+
+.productDetailModalPanel textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.productDetailAddButton {
+  min-height: 3rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.8rem 1.2rem;
+  color: var(--color-button-text, white);
+  background: var(--color-brand);
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.productDetailAddButton:hover,
+.productDetailAddButton:focus-visible {
+  filter: brightness(0.96);
+  transform: translateY(-1px);
+}
+
+.productDetailAddButton:disabled {
+  color: var(--color-muted);
+  background: var(--surface-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.productDetailCarousel {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.productDetailCarouselStage {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--media-bg);
+}
+
+.productDetailCarouselStage > img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.productDetailCarouselControls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  pointer-events: none;
+}
+
+.productDetailCarouselControls button {
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--surface) 64%, transparent);
+  border-radius: 999px;
+  color: var(--color-heading);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.productDetailCarouselThumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--space-2);
+}
+
+.productDetailCarouselThumb,
+.productDetailCarouselThumbActive {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  color: var(--color-muted);
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.productDetailCarouselThumbActive {
+  border-color: var(--color-brand);
+  color: var(--color-heading);
+  background: color-mix(in srgb, var(--surface-muted) 72%, white 28%);
+}
+
+.productDetailCarouselThumb img,
+.productDetailCarouselThumbActive img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: calc(var(--radius-md) - 2px);
+  object-fit: cover;
+  background: var(--media-bg);
+}
+
+@media (max-width: 640px) {
+  .productDetailModal {
+    align-items: end;
+    padding: var(--space-3);
+  }
+
+  .productDetailModalPanel {
+    width: 100%;
+    max-height: calc(100svh - calc(var(--space-3) * 2));
+  }
+
+  .productDetailCarouselThumbs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

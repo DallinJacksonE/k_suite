@@ -1,5 +1,7 @@
 import type {
   BillingAddress,
+  BlogArticleRecord,
+  BlogCollectionRecord,
   CheckoutContact,
   CheckoutEstimate,
   CheckoutIdempotencyKey,
@@ -28,6 +30,7 @@ import type {
   UserAddressBook,
   UserProfileDetails,
 } from '../src/index.js';
+import { DEFAULT_BLOG_COLLECTION_TAG } from '../src/index.js';
 import { DEFAULT_TOAST_DURATION_MS } from '../src/toast.js';
 
 const size: ProductSize = 'medium';
@@ -176,6 +179,7 @@ const marketEvent: MarketEvent = {
   id: 'market-1',
   title: 'Summer Market',
   location: 'Downtown',
+  address: '123 Market St, Pittsburgh, PA 15222',
   startsAt: '2026-07-01T10:00:00.000Z',
   endsAt: '2026-07-01T14:00:00.000Z',
   description: 'Outdoor craft market',
@@ -185,6 +189,21 @@ const marketEvent: MarketEvent = {
 const markets: MarketEventResponse = {
   events: [marketEvent],
   nextEvent: marketEvent,
+};
+
+const blogCollection: BlogCollectionRecord = {
+  tag: DEFAULT_BLOG_COLLECTION_TAG,
+  label: 'Kaylies Creations Updates',
+};
+
+const blogArticle: BlogArticleRecord = {
+  articleId: 'article-1',
+  title: 'Launch',
+  slug: 'launch',
+  excerpt: 'News',
+  blocks: [{ type: 'paragraph', text: 'Welcome readers.' }],
+  collectionTags: [blogCollection.tag, 'tutorials'],
+  published: true,
 };
 
 const csrf: CsrfTokenResponse = {
@@ -216,6 +235,8 @@ void [
   addressBook,
   profileResponse,
   markets,
+  blogCollection,
+  blogArticle,
   csrf,
   rateLimit,
   emailEvent,

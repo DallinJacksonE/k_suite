@@ -3,7 +3,7 @@ import type { MariaDbAccess } from '@k_suite/shared';
 import { createMariaDbAccess } from '../db/mariadb_access.js';
 
 export interface BlogRouterDeps {
-  access?: Pick<MariaDbAccess, 'listPublishedBlogArticles'>;
+  access?: Pick<MariaDbAccess, 'listPublishedBlogArticles' | 'listPublicBlogCollections'>;
 }
 
 export function createBlogRouter(deps: BlogRouterDeps = {}): Router {
@@ -12,6 +12,10 @@ export function createBlogRouter(deps: BlogRouterDeps = {}): Router {
 
   router.get('/articles', asyncHandler(async (_req, res) => {
     res.json({ articles: await access.listPublishedBlogArticles() });
+  }));
+
+  router.get('/collections', asyncHandler(async (_req, res) => {
+    res.json({ collections: await access.listPublicBlogCollections() });
   }));
 
   return router;

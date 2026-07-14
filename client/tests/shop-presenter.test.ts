@@ -40,21 +40,26 @@ const pattern: Product = {
 test('shop presenter loads batches, filters, load more, and gates guest pattern adds', async () => {
   const updates: ShopViewModel[] = []
   const addCalls: unknown[] = []
+  const requests: unknown[] = []
   const presenter = new ShopPresenter({
-    listShopProducts: async (request) => ({ products: request.afterId ? [pattern] : [plushie], nextCursor: request.afterId ? undefined : 'plushie-1', hasMore: !request.afterId, appliedFilters: request.filters ?? { type: 'all' } }),
+    listShopProducts: async (request) => { requests.push(request); return { products: request.afterId ? [pattern] : [plushie], nextCursor: request.afterId ? undefined : 'plushie-1', hasMore: !request.afterId, appliedFilters: request.filters ?? { type: 'all' } } },
     addCartItem: async (input) => { addCalls.push(input); return { cart: [input] } },
-  }, { status: 'guest' })
+  }, { status: 'guest' }, { productType: 'plushie' })
 
   presenter.attach({ setShop: (model) => updates.push(model), setBusy: () => {}, setError: () => {} })
   await presenter.loadInitial()
   await presenter.loadMore()
-  await presenter.applyFilters({ type: 'plushie', saleOnly: true })
+  await presenter.applyFilters({ type: 'pattern', saleOnly: true }, 'price', 'asc')
   presenter.selectProduct(pattern)
   await presenter.addSelectedToCart({ quantity: 1 })
 
   assert.equal(updates[0].products[0].id, 'plushie-1')
   assert.deepEqual(updates[1].products.map((product) => product.id), ['plushie-1', 'pattern-1'])
   assert.equal(updates.at(-1)?.filters.saleOnly, true)
+  assert.equal(updates.at(-1)?.filters.type, 'plushie')
+  assert.equal(updates.at(-1)?.sort, 'price')
+  assert.equal(updates.at(-1)?.direction, 'asc')
+  assert.deepEqual(requests.at(-1), { filters: { type: 'plushie', saleOnly: true }, batchSize: 20, sort: 'price', direction: 'asc' })
   assert.equal(addCalls.length, 0)
   assert.match(updates.at(-1)?.notice ?? '', /log in/i)
 })

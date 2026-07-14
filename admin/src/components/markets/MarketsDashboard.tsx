@@ -13,29 +13,44 @@ interface MarketsDashboardProps {
 }
 
 export function MarketsDashboard({ events, busy, onCreate, onUpdate, onDelete, onRefresh }: MarketsDashboardProps) {
-  const [draft, setDraft] = useState<MarketEventInput>(emptyMarketDraft())
+  const [newMarketDraft, setNewMarketDraft] = useState<MarketEventInput>(emptyMarketDraft())
+  const [creatingNewMarket, setCreatingNewMarket] = useState(false)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
-  async function saveDraft() {
-    const saved = await onCreate(draft)
-    if (saved) setDraft(emptyMarketDraft())
+  async function saveNewMarket() {
+    const saved = await onCreate(newMarketDraft)
+    if (saved) {
+      setNewMarketDraft(emptyMarketDraft())
+      setCreatingNewMarket(false)
+    }
   }
 
   return (
     <div className="category-stack">
-      <Panel title="Add market date" description="Create upcoming markets with a title, date, time, and location.">
-        <MarketEventForm event={draft} busy={busy} submitLabel="Create market date" onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} onSubmit={() => void saveDraft()} />
-      </Panel>
-
-      <Panel title="Market dates" description="Click a market date to edit or delete it inline.">
-        <button type="button" onClick={onRefresh} disabled={busy}>Refresh market dates</button>
+      <Panel title="Market dates" description="Add a market date or click an existing market date to edit or delete it inline.">
+        <div className="button-row">
+          <button type="button" onClick={() => { setCreatingNewMarket((current) => !current); setSelectedEventId(null) }} disabled={busy}>{creatingNewMarket ? 'Close new market form' : 'New market'}</button>
+          <button type="button" onClick={onRefresh} disabled={busy}>Refresh market dates</button>
+        </div>
+        {creatingNewMarket ? (
+          <div className="product-listing selected">
+            <MarketEventForm
+              event={newMarketDraft}
+              busy={busy}
+              submitLabel="Create market date"
+              onChange={(patch) => setNewMarketDraft((current) => ({ ...current, ...patch }))}
+              onSubmit={() => void saveNewMarket()}
+              onCancel={() => { setNewMarketDraft(emptyMarketDraft()); setCreatingNewMarket(false) }}
+            />
+          </div>
+        ) : null}
         {events.length ? (
           <ul className="result-list product-result-list">
             {events.map((event) => {
               const selected = selectedEventId === event.id
               return (
                 <li key={event.id} className={selected ? 'product-listing selected' : 'product-listing'}>
-                  <button type="button" className="product-listing-summary" onClick={() => setSelectedEventId(selected ? null : event.id)} aria-expanded={selected}>
+                  <button type="button" className="product-listing-summary" onClick={() => { setSelectedEventId(selected ? null : event.id); setCreatingNewMarket(false) }} aria-expanded={selected}>
                     <span className="product-listing-main"><strong>{event.title}</strong><span>{event.location}</span></span>
                     <span>{formatMarketDate(event.startsAt)}</span>
                     <span className="dropdown-indicator">{selected ? 'Close editor' : 'Edit market date'}</span>
@@ -65,15 +80,16 @@ function MarketInlineEditor({ event, busy, onUpdate, onDelete }: { event: Market
   )
 }
 
-function MarketEventForm({ event, busy, submitLabel, onChange, onSubmit, onDelete }: { event: MarketEventInput; busy: boolean; submitLabel: string; onChange(patch: Partial<MarketEventInput>): void; onSubmit(): void; onDelete?(): void }) {
+function MarketEventForm({ event, busy, submitLabel, onChange, onSubmit, onDelete, onCancel }: { event: MarketEventInput; busy: boolean; submitLabel: string; onChange(patch: Partial<MarketEventInput>): void; onSubmit(): void; onDelete?(): void; onCancel?(): void }) {
   const submit = (formEvent: FormEvent<HTMLFormElement>) => { formEvent.preventDefault(); onSubmit() }
   return (
     <form onSubmit={submit} className="form-grid">
       <label>Title<input value={event.title} onChange={(change) => onChange({ title: change.target.value })} /></label>
       <label>Location<input value={event.location} onChange={(change) => onChange({ location: change.target.value })} /></label>
+      <label>Address<input value={event.address ?? ''} onChange={(change) => onChange({ address: change.target.value })} placeholder="Street address for Google Maps" /></label>
       <label>Date<input type="date" value={datePart(event.startsAt)} onChange={(change) => onChange({ startsAt: combineDateAndTime(change.target.value, timePart(event.startsAt)) })} /></label>
       <label>Time<input type="time" value={timePart(event.startsAt)} onChange={(change) => onChange({ startsAt: combineDateAndTime(datePart(event.startsAt), change.target.value) })} /></label>
-      <div className="button-row full-width"><button type="submit" disabled={busy}>{submitLabel}</button>{onDelete ? <button type="button" className="danger-button" onClick={onDelete} disabled={busy}>Delete market date</button> : null}</div>
+      <div className="button-row full-width"><button type="submit" disabled={busy}>{submitLabel}</button>{onCancel ? <button type="button" onClick={onCancel} disabled={busy}>Cancel</button> : null}{onDelete ? <button type="button" className="danger-button" onClick={onDelete} disabled={busy}>Delete market date</button> : null}</div>
     </form>
   )
 }
@@ -83,7 +99,7 @@ function emptyMarketDraft(): MarketEventInput {
 }
 
 function toFormEvent(event: MarketEventRecord): MarketEventInput {
-  return { title: event.title, location: event.location, startsAt: toLocalDateTimeValue(event.startsAt), endsAt: event.endsAt, description: event.description, externalUrl: event.externalUrl }
+  return { title: event.title, location: event.location, address: event.address, startsAt: toLocalDateTimeValue(event.startsAt), endsAt: event.endsAt, description: event.description, externalUrl: event.externalUrl }
 }
 
 function formatMarketDate(value: string): string {

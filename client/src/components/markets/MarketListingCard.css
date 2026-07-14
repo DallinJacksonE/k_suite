@@ -1,0 +1,70 @@
+.market-listing-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 12rem);
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.market-listing-card h2 {
+  margin-top: 0;
+}
+
+.market-listing-card__address {
+  color: var(--color-muted);
+}
+
+.market-listing-list {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.market-listing-list > li {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.market-listing-list > li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.google-map-thumbnail {
+  position: relative;
+  display: block;
+  min-height: 8rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--media-bg);
+  color: var(--color-heading);
+  text-decoration: none;
+}
+
+.google-map-thumbnail iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 8rem;
+  border: 0;
+  pointer-events: none;
+}
+
+.google-map-thumbnail span {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .market-listing-card {
+    grid-template-columns: 1fr;
+  }
+}

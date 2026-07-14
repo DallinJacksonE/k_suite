@@ -3,11 +3,15 @@ import type {
   ClientSessionState,
   BlogArticle,
   BlogArticleResponse,
+  BlogCollection,
+  BlogCollectionResponse,
   CartItemInput,
   CartResponse,
   CartSnapshot,
   CheckoutEstimateRequest,
   CheckoutEstimateResponse,
+  CheckoutRequest,
+  CheckoutResult,
   CsrfTokenResponse,
   LoginInput,
   MarketEventResponse,
@@ -44,11 +48,14 @@ export interface ClientApiService {
   getNextMarketEvent(): Promise<MarketEventSummary | null>
   listMarketEvents(): Promise<MarketEventResponse>
   listBlogArticles(): Promise<BlogArticle[]>
+  listBlogCollections(): Promise<BlogCollection[]>
   listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse>
   addCartItem(input: CartItemInput): Promise<CartResponse>
   getCart(): Promise<CartSnapshot>
   updateCartItem(itemId: string, input: UpdateCartItemInput): Promise<CartSnapshot>
+  removeCartItem(productType: CartItemInput['productType'], itemId: string): Promise<CartSnapshot>
   estimateCheckout(input: CheckoutEstimateRequest): Promise<CheckoutEstimateResponse>
+  checkout(input: CheckoutRequest): Promise<CheckoutResult>
 }
 
 export class FetchClientApiService implements ClientApiService {
@@ -118,6 +125,10 @@ export class FetchClientApiService implements ClientApiService {
     return (await this.request<BlogArticleResponse>('/blog/articles')).articles
   }
 
+  async listBlogCollections(): Promise<BlogCollection[]> {
+    return (await this.request<BlogCollectionResponse>('/blog/collections')).collections
+  }
+
   async listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse> {
     return this.request<ShopProductBatchResponse>(`/shop/products?${toShopQuery(request)}`)
   }
@@ -140,12 +151,27 @@ export class FetchClientApiService implements ClientApiService {
     })
   }
 
+  async removeCartItem(productType: CartItemInput['productType'], itemId: string): Promise<CartSnapshot> {
+    const csrf = await this.request<CsrfTokenResponse>('/user/csrf')
+    await this.request<CartResponse>(productType === 'pattern' ? '/shop/patterns' : '/shop/plushies', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', [csrf.headerName]: csrf.token },
+      body: JSON.stringify({ productId: itemId }),
+    })
+    return this.getCart()
+  }
+
   async estimateCheckout(input: CheckoutEstimateRequest): Promise<CheckoutEstimateResponse> {
     return this.request<CheckoutEstimateResponse>('/shop/checkout/estimate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(input),
     })
+  }
+
+
+  async checkout(input: CheckoutRequest): Promise<CheckoutResult> {
+    return this.mutatingRequest<CheckoutResult>('/shop/checkout', input)
   }
 
   private async mutatingRequest<T>(path: string, body: unknown): Promise<T> {

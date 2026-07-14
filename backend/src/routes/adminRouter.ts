@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import type { CreateBlogArticleInput, CreateMarketEventInput, CreateProductInput, OrderStatus, UpdateBlogArticleInput, UpdateMarketEventInput, UpdateProductInput } from '@k_suite/shared';
+import type { AdminRefundOrderInput, AdminUpdateUserInput, CreateBlogArticleInput, CreateMarketEventInput, CreateProductInput, OrderStatus, UpdateBlogArticleInput, UpdateMarketEventInput, UpdateProductInput } from '@k_suite/shared';
 import { createMariaDbAccess, type MariaDbAccess } from '../db/mariadb_access.js';
 import { createMinIoBucketService, type MinIoBucketService, type PhotoCategory } from '../db/minIo.js';
 import { readCookie, setAdminCookie } from './cookieHelpers.js';
@@ -30,6 +30,25 @@ export function createAdminRouter(deps: AdminRouterDeps = {}): Router {
   router.patch('/orders/:orderId/status', asyncHandler(async (req, res) => {
     const order = await access.updateOrderStatus(readAdminCookie(req), readParam(req, 'orderId'), readOrderStatus(req.body));
     res.json({ order });
+  }));
+
+  router.post('/orders/:orderId/refund', asyncHandler(async (req, res) => {
+    const order = await access.refundOrder(readAdminCookie(req), readParam(req, 'orderId'), req.body as AdminRefundOrderInput);
+    res.json({ order });
+  }));
+
+  router.get('/users', asyncHandler(async (req, res) => {
+    res.json({ users: await access.listAdminUsers(readAdminCookie(req)) });
+  }));
+
+  router.patch('/users/:email', asyncHandler(async (req, res) => {
+    const user = await access.updateAdminUser(readAdminCookie(req), readParam(req, 'email'), req.body as AdminUpdateUserInput);
+    res.json({ user });
+  }));
+
+  router.delete('/users/:email', asyncHandler(async (req, res) => {
+    await access.deleteAdminUser(readAdminCookie(req), readParam(req, 'email'));
+    res.status(204).send();
   }));
 
   router.get('/products', asyncHandler(async (req, res) => {
@@ -81,6 +100,25 @@ export function createAdminRouter(deps: AdminRouterDeps = {}): Router {
 
   router.get('/blog/articles', asyncHandler(async (req, res) => {
     res.json({ articles: await access.listBlogArticles(readAdminCookie(req)) });
+  }));
+
+  router.get('/blog/collections', asyncHandler(async (req, res) => {
+    res.json({ collections: await access.listBlogCollections(readAdminCookie(req)) });
+  }));
+
+  router.post('/blog/collections', asyncHandler(async (req, res) => {
+    const collection = await access.createBlogCollection(readAdminCookie(req), req.body);
+    res.status(201).json({ collection });
+  }));
+
+  router.patch('/blog/collections/:tag', asyncHandler(async (req, res) => {
+    const collection = await access.updateBlogCollection(readAdminCookie(req), readParam(req, 'tag'), req.body);
+    res.json({ collection });
+  }));
+
+  router.delete('/blog/collections/:tag', asyncHandler(async (req, res) => {
+    await access.deleteBlogCollection(readAdminCookie(req), readParam(req, 'tag'));
+    res.status(204).send();
   }));
 
   router.post('/blog/articles', asyncHandler(async (req, res) => {
@@ -150,7 +188,7 @@ function parsePhotoCategory(value: string): PhotoCategory {
 
 function readOrderStatus(body: unknown): OrderStatus {
   const status = (body as { status?: unknown }).status;
-  if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'cancelled') return status;
+  if (status === 'pending' || status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'cancelled' || status === 'refunded') return status;
   throw new Error('Invalid order status.');
 }
 

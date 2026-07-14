@@ -5,7 +5,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCartShopping } from '@fortawesome/free-solid-svg-icons'
 
 const navigationLinks = [
-  { to: '/shop', label: 'Plushies' },
+  { to: '/plushies', label: 'Plushies' },
+  { to: '/patterns', label: 'Patterns' },
   { to: '/blog', label: 'Blog' },
   { to: '/markets', label: 'Markets' },
   { to: '/cart', label: 'Cart' },

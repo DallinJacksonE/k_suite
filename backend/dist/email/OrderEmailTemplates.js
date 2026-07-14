@@ -13,6 +13,8 @@ export function createOrderEmailMessage(event, order) {
 }
 function renderOrderEmailText(event, order) {
     const total = formatCurrency(order.chargedAmount);
+    if (event === 'order_created' && order.status === 'paid')
+        return `Thanks for your order ${order.orderId}. We have received payment. Total: ${total}.`;
     if (event === 'order_created')
         return `Thanks for your order ${order.orderId}. We have received it and it is pending payment confirmation. Total: ${total}.`;
     if (event === 'order_shipped')

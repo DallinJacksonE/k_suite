@@ -23,10 +23,12 @@ const fakeService: ClientApiService = {
   getNextMarketEvent: async () => null,
   listMarketEvents: async () => ({ events: [] }),
   listBlogArticles: async () => [],
+  listBlogCollections: async () => [],
   listShopProducts: async () => ({ products: [], hasMore: false, appliedFilters: { type: 'all' } }),
   addCartItem: async () => ({ cart: [] }),
   getCart: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
   updateCartItem: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
+  removeCartItem: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
   estimateCheckout: async () => ({ subtotal: 0, shipping: 0, tax: 0, discount: 0, grandTotal: 0, currency: 'USD' }),
 }
 

@@ -21,8 +21,12 @@ async function request(server, path) {
 test('blog route lists published articles without admin auth', async () => {
   const app = express().use('/blog', createBlogRouter({
     access: {
+      listPublicBlogCollections: async () => [
+        { tag: 'kaylies-creations-updates', label: 'Kaylies Creations Updates' },
+        { tag: 'tutorials', label: 'Tutorials' },
+      ],
       listPublishedBlogArticles: async () => [
-        { articleId: 'a1', title: 'Launch', slug: 'launch', excerpt: 'Published article', published: true, blocks: [{ type: 'paragraph', text: 'Hello readers.' }] },
+        { articleId: 'a1', title: 'Launch', slug: 'launch', excerpt: 'Published article', published: true, collectionTags: ['tutorials'], blocks: [{ type: 'paragraph', text: 'Hello readers.' }] },
       ],
     },
   }));
@@ -34,9 +38,13 @@ test('blog route lists published articles without admin auth', async () => {
     assert.equal(result.response.status, 200);
     assert.deepEqual(result.body, {
       articles: [
-        { articleId: 'a1', title: 'Launch', slug: 'launch', excerpt: 'Published article', published: true, blocks: [{ type: 'paragraph', text: 'Hello readers.' }] },
+        { articleId: 'a1', title: 'Launch', slug: 'launch', excerpt: 'Published article', published: true, collectionTags: ['tutorials'], blocks: [{ type: 'paragraph', text: 'Hello readers.' }] },
       ],
     });
+
+    const collections = await request(server, '/blog/collections');
+    assert.equal(collections.response.status, 200);
+    assert.equal(collections.body.collections[1].tag, 'tutorials');
   } finally {
     server.close();
   }

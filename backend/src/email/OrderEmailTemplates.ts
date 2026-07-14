@@ -18,6 +18,7 @@ export function createOrderEmailMessage(event: OrderEmailEvent, order: OrderReco
 
 function renderOrderEmailText(event: OrderEmailEvent, order: OrderRecord): string {
   const total = formatCurrency(order.chargedAmount);
+  if (event === 'order_created' && order.status === 'paid') return `Thanks for your order ${order.orderId}. We have received payment. Total: ${total}.`;
   if (event === 'order_created') return `Thanks for your order ${order.orderId}. We have received it and it is pending payment confirmation. Total: ${total}.`;
   if (event === 'order_shipped') return `Good news — order ${order.orderId} has shipped.`;
   if (event === 'order_cancelled') return `Order ${order.orderId} has been cancelled. If this looks wrong, please contact support.`;

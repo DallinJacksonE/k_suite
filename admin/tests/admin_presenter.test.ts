@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { AdminDashboardPresenter } from '../src/presenter/AdminDashboardPresenter.ts'
 import type { AdminDashboardView, UploadedAsset } from '../src/presenter/AdminDashboardPresenter.ts'
-import type { AdminApiService, ApiEndpointDoc, BlogArticleRecord, MarketEventRecord, OrderRecord, ProductRecord, ServiceHealthReport } from '../src/service/AdminApiService.ts'
+import type { AdminApiService, ApiEndpointDoc, BlogArticleRecord, BlogCollectionRecord, MarketEventRecord, OrderRecord, ProductRecord, ServiceHealthReport } from '../src/service/AdminApiService.ts'
 
 class FakeView implements AdminDashboardView {
   busy = false
@@ -16,6 +16,7 @@ class FakeView implements AdminDashboardView {
   orders: OrderRecord[] = []
   products: ProductRecord[] = []
   articles: BlogArticleRecord[] = []
+  collections: BlogCollectionRecord[] = []
   marketEvents: MarketEventRecord[] = []
   serviceHealth: ServiceHealthReport | null = null
   uploadedAssets: UploadedAsset[] = []
@@ -30,6 +31,7 @@ class FakeView implements AdminDashboardView {
   setOrders(value: OrderRecord[]): void { this.orders = value }
   setProducts(value: ProductRecord[]): void { this.products = value }
   setBlogArticles(value: BlogArticleRecord[]): void { this.articles = value }
+  setBlogCollections(value: BlogCollectionRecord[]): void { this.collections = value }
   setMarketEvents(value: MarketEventRecord[]): void { this.marketEvents = value }
   setServiceHealth(value: ServiceHealthReport): void { this.serviceHealth = value }
   addCreatedProduct(value: ProductRecord): void { this.products = [value, ...this.products] }
@@ -52,12 +54,16 @@ function createService(): AdminApiService {
     uploadPatternPdf: async () => ({ bucket: 'private-patterns', key: 'pdfs/patterns/pattern.pdf' }),
     deletePatternPdf: async () => {},
     listBlogArticles: async () => [],
-    createBlogArticle: async (input) => ({ articleId: 'blog-1', createdAt: 'now', updatedAt: 'now', ...input, published: input.published ?? false }),
-    updateBlogArticle: async (articleId, input) => ({ articleId, title: 'T', slug: 't', excerpt: 'E', blocks: [], published: false, ...input }),
+    listBlogCollections: async () => [{ tag: 'kaylies-creations-updates', label: 'Kaylies Creations Updates' }],
+    createBlogCollection: async (input) => ({ tag: input.tag ?? 'tutorials', label: input.label, description: input.description }),
+    updateBlogCollection: async (tag, input) => ({ tag: input.tag ?? tag, label: input.label ?? 'Collection', description: input.description }),
+    deleteBlogCollection: async () => {},
+    createBlogArticle: async (input) => ({ articleId: 'blog-1', createdAt: 'now', updatedAt: 'now', ...input, collectionTags: input.collectionTags ?? ['kaylies-creations-updates'], published: input.published ?? false }),
+    updateBlogArticle: async (articleId, input) => ({ articleId, title: 'T', slug: 't', excerpt: 'E', blocks: [], collectionTags: input.collectionTags ?? ['kaylies-creations-updates'], published: false, ...input }),
     deleteBlogArticle: async () => {},
     listMarketEvents: async () => [],
     createMarketEvent: async (input) => ({ id: 'market-1', ...input }),
-    updateMarketEvent: async (eventId, input) => ({ id: eventId, title: 'Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z', ...input }),
+    updateMarketEvent: async (eventId, input) => ({ id: eventId, title: 'Market', location: 'Town Square', address: '123 Market St', startsAt: '2026-07-04T10:00:00.000Z', ...input }),
     deleteMarketEvent: async () => {},
     loadServiceHealth: async () => ({ status: 'ok', checkedAt: 'now', services: [{ name: 'database', status: 'ok' }] }),
   }
@@ -144,15 +150,22 @@ test('orders and service health workflows update category state', async () => {
 })
 
 test('market date workflows validate and refresh events', async () => {
-  const presenter = new AdminDashboardPresenter(createService())
+  let created: MarketEventRecord | null = null
+  const service = createService()
+  service.createMarketEvent = async (input) => {
+    created = { id: 'market-1', ...input }
+    return created
+  }
+  const presenter = new AdminDashboardPresenter(service)
   const view = new FakeView()
   presenter.attach(view)
 
-  await presenter.createMarketEvent({ title: 'Saturday Market', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' })
+  await presenter.createMarketEvent({ title: 'Saturday Market', location: 'Town Square', address: '  123 Market St  ', startsAt: '2026-07-04T10:00:00.000Z' })
   await presenter.updateMarketEvent('market-1', { location: 'City Hall' })
   await presenter.deleteMarketEvent('market-1')
 
   assert.equal(view.status, 'Market date deleted.')
+  assert.equal(created?.address, '123 Market St')
   await presenter.createMarketEvent({ title: '', location: 'Town Square', startsAt: '2026-07-04T10:00:00.000Z' })
   assert.equal(view.error, 'title is required.')
 })

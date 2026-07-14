@@ -17,8 +17,12 @@ function App() {
           <Routes>
             <Route path="/" element={<HomeView />} />
             <Route path="/shop" element={<ShopView />} />
+            <Route path="/plushies" element={<ShopView productType="plushie" title="Shop ready-to-love plushies." description="Browse handmade plushies, filter by size or color, and add favorites to your cart as a guest or signed-in customer." />} />
+            <Route path="/patterns" element={<ShopView productType="pattern" title="Shop crochet patterns." description="Browse downloadable pattern PDFs separately from finished plushies. Pattern purchases require login so downloads can stay tied to your account." />} />
             <Route path="/markets" element={<MarketsView />} />
             <Route path="/blog" element={<BlogView />} />
+            <Route path="/blog/collections/:collectionTag" element={<BlogView mode="collection" />} />
+            <Route path="/blog/:slug" element={<BlogView mode="article" />} />
             <Route path="/cart" element={<CartView />} />
             <Route path="/profile" element={<ProfileView />} />
             <Route path="/login" element={<LoginView />} />

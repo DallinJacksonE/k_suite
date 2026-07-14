@@ -1,6 +1,6 @@
 import type { CreateProductInput, Product, ProductSize, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductBatchResponse, UpdateProductInput } from './products.js';
 
-export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled';
+export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled' | 'refunded';
 export type CookieKind = 'session' | 'client' | 'admin';
 export type CheckoutIdempotencyKey = string;
 export type CheckoutPaymentStatus = 'pending' | 'authorized' | 'paid' | 'failed';
@@ -145,6 +145,7 @@ export interface MarketEvent {
   id: string;
   title: string;
   location: string;
+  address?: string;
   startsAt: Date | string;
   endsAt?: Date | string;
   description?: string;
@@ -154,6 +155,7 @@ export interface MarketEvent {
 export interface CreateMarketEventInput {
   title: string;
   location: string;
+  address?: string;
   startsAt: Date | string;
   endsAt?: Date | string;
   description?: string;
@@ -163,6 +165,7 @@ export interface CreateMarketEventInput {
 export interface UpdateMarketEventInput {
   title?: string;
   location?: string;
+  address?: string;
   startsAt?: Date | string;
   endsAt?: Date | string;
   description?: string;
@@ -243,12 +246,35 @@ export interface BlogImageBlock { type: 'image'; url: string; alt: string }
 export interface BlogYoutubeBlock { type: 'youtube'; videoId: string; title?: string }
 export type BlogArticleBlock = BlogHeadingBlock | BlogParagraphBlock | BlogImageBlock | BlogYoutubeBlock;
 
+export const DEFAULT_BLOG_COLLECTION_TAG = 'kaylies-creations-updates';
+
+export interface BlogCollectionRecord {
+  tag: string;
+  label: string;
+  description?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface CreateBlogCollectionInput {
+  tag?: string;
+  label: string;
+  description?: string;
+}
+
+export interface UpdateBlogCollectionInput {
+  tag?: string;
+  label?: string;
+  description?: string;
+}
+
 export interface BlogArticleRecord {
   articleId: string;
   title: string;
   slug: string;
   excerpt: string;
   blocks: BlogArticleBlock[];
+  collectionTags: string[];
   published: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -259,6 +285,7 @@ export interface CreateBlogArticleInput {
   slug: string;
   excerpt: string;
   blocks: BlogArticleBlock[];
+  collectionTags?: string[];
   published?: boolean;
 }
 
@@ -267,6 +294,7 @@ export interface UpdateBlogArticleInput {
   slug?: string;
   excerpt?: string;
   blocks?: BlogArticleBlock[];
+  collectionTags?: string[];
   published?: boolean;
 }
 
@@ -348,6 +376,34 @@ export interface UserProfile {
   orders: OrderRecord[];
   purchasedPatterns: PurchasedPatternDownload[];
 }
+
+export interface AdminUserStats {
+  orderCount: number;
+  totalSpent: number;
+  refundedTotal: number;
+  purchasedPatternCount: number;
+  cartItemCount: number;
+}
+
+export interface AdminUserAccount {
+  user: UserProfileDetails & { createdAt?: Date | string; updatedAt?: Date | string };
+  orders: OrderRecord[];
+  purchasedPatterns: PurchasedPatternDownload[];
+  stats: AdminUserStats;
+}
+
+export interface AdminUpdateUserInput {
+  name?: string;
+  addressBook?: UserAddressBook;
+  emailNotificationsEnabled?: boolean;
+  password?: string;
+}
+
+export interface AdminRefundOrderInput {
+  amount?: number;
+  reason?: string;
+}
+
 
 export interface AccessResult {
   user: PublicUser;
@@ -448,6 +504,7 @@ export interface MariaDbServiceLike {
   findAdminByEmail(email: string): Promise<AdminRecord | null>;
   insertUser(input: InsertUserInput): Promise<UserRecord>;
   findUserByEmail(email: string): Promise<UserRecord | null>;
+  listUsers(): Promise<UserRecord[]>;
   updateUser(email: string, patch: UserPatch): Promise<UserRecord>;
   deleteUser(email: string): Promise<void>;
   upsertCookie(email: string, cookie: string, kind?: CookieKind, expiresAt?: Date): Promise<void>;
@@ -478,6 +535,10 @@ export interface MariaDbServiceLike {
   insertMarketEvent(input: CreateMarketEventInput & { id: string }): Promise<MarketEvent>;
   updateMarketEvent(eventId: string, patch: UpdateMarketEventInput): Promise<MarketEvent>;
   deleteMarketEvent(eventId: string): Promise<void>;
+  listBlogCollections(): Promise<BlogCollectionRecord[]>;
+  insertBlogCollection(input: CreateBlogCollectionInput & { tag: string }): Promise<BlogCollectionRecord>;
+  updateBlogCollection(tag: string, patch: UpdateBlogCollectionInput): Promise<BlogCollectionRecord>;
+  deleteBlogCollection(tag: string): Promise<void>;
   listBlogArticles(): Promise<BlogArticleRecord[]>;
   insertBlogArticle(input: CreateBlogArticleInput & { articleId: string }): Promise<BlogArticleRecord>;
   updateBlogArticle(articleId: string, patch: UpdateBlogArticleInput): Promise<BlogArticleRecord>;
@@ -493,6 +554,10 @@ export interface MariaDbAccess {
   getUser(email: string, cookie: string): Promise<UserProfile>;
   updateUser(userData: UpdateUserInput, email: string, cookie: string): Promise<PublicUser>;
   deleteUser(email: string, cookie: string): Promise<void>;
+  listAdminUsers(adminCookie: string): Promise<AdminUserAccount[]>;
+  updateAdminUser(adminCookie: string, email: string, input: AdminUpdateUserInput): Promise<AdminUserAccount>;
+  deleteAdminUser(adminCookie: string, email: string): Promise<void>;
+  refundOrder(adminCookie: string, orderId: string, input: AdminRefundOrderInput): Promise<OrderRecord>;
   getOrders(adminCookie: string): Promise<OrderRecord[]>;
   updateOrderStatus(adminCookie: string, orderId: string, status: OrderStatus): Promise<OrderRecord>;
   getServiceHealth(adminCookie: string): Promise<ServiceHealthReport>;
@@ -503,7 +568,12 @@ export interface MariaDbAccess {
   listAdminProducts(adminCookie: string): Promise<Product[]>;
   editProduct(adminCookie: string, productId: string, productDTO: UpdateProductInput): Promise<Product>;
   removeProduct(adminCookie: string, productId: string): Promise<void>;
+  listBlogCollections(adminCookie: string): Promise<BlogCollectionRecord[]>;
+  createBlogCollection(adminCookie: string, input: CreateBlogCollectionInput): Promise<BlogCollectionRecord>;
+  updateBlogCollection(adminCookie: string, tag: string, input: UpdateBlogCollectionInput): Promise<BlogCollectionRecord>;
+  deleteBlogCollection(adminCookie: string, tag: string): Promise<void>;
   listBlogArticles(adminCookie: string): Promise<BlogArticleRecord[]>;
+  listPublicBlogCollections(): Promise<BlogCollectionRecord[]>;
   listPublishedBlogArticles(): Promise<BlogArticleRecord[]>;
   createBlogArticle(adminCookie: string, input: CreateBlogArticleInput): Promise<BlogArticleRecord>;
   updateBlogArticle(adminCookie: string, articleId: string, input: UpdateBlogArticleInput): Promise<BlogArticleRecord>;
