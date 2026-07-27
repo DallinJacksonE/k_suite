@@ -31,6 +31,14 @@
   cursor: pointer;
 }
 
+.client-shell__menu-button svg {
+  trasition: transform 0.3s ease;
+}
+
+.client-shell__menu-button[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
 .client-shell__nav {
   display: flex;
   align-items: center;
@@ -140,14 +148,22 @@
 }
 
 @media (max-width: 800px) {
-  .client-shell__header,
+  .client-shell__header {
+    flex-wrap: wrap;
+  }
+
   .status-card {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .client-shell__brand {
+    order: 1;
+  }
+
   .client-shell__menu-button {
     display: inline-flex;
+    order: 2;
   }
 
   .client-shell__nav {
@@ -155,6 +171,8 @@
     width: 100%;
     flex-direction: column;
     align-items: stretch;
+    order: 3;
+    margin-top: 1 rem;
   }
 
   .client-shell__nav--open {

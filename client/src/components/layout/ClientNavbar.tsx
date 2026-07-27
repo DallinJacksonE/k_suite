@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useClientSession } from '../auth/useClientSession'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCartShopping } from '@fortawesome/free-solid-svg-icons'
+import { faCartShopping, faBars, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 const navigationLinks = [
   { to: '/plushies', label: 'Plushies' },
@@ -31,15 +31,7 @@ export function ClientNavbar() {
       <NavLink className="client-shell__brand" to="/" onClick={() => setMenuOpen(false)}>
         Kaylie&apos;s Creations
       </NavLink>
-      <button
-        className="client-shell__menu-button"
-        type="button"
-        aria-controls="client-navigation"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((current) => !current)}
-      >
-        Menu
-      </button>
+
       <nav
         id="client-navigation"
         className={`client-shell__nav${menuOpen ? ' client-shell__nav--open' : ''}`}
@@ -55,6 +47,15 @@ export function ClientNavbar() {
         </NavLink>
         {loggedIn ? <button type="button" onClick={() => void logOut()}>Logout</button> : null}
       </nav>
+      <button
+        className="client-shell__menu-button"
+        type="button"
+        aria-controls="client-navigation"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((current) => !current)}
+      >
+        <FontAwesomeIcon icon={menuOpen ? faXmark : faBars} />
+      </button>
     </header>
   )
 }
