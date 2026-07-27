@@ -1,4 +1,4 @@
-import type { CartItemInput, ClientSessionState, Product, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductFilters, ShopViewModel } from '../service/ClientTypes'
+import type { CartItemInput, ClientSessionState, Product, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductFilters, ShopProductFilterOptions, ShopViewModel } from '../service/ClientTypes'
 
 export interface ShopPresenterView {
   setShop(model: ShopViewModel): void
@@ -8,6 +8,7 @@ export interface ShopPresenterView {
 
 export interface ShopService {
   listShopProducts(request: ShopProductBatchRequest): Promise<{ products: Product[]; nextCursor?: string; hasMore: boolean; appliedFilters: ShopProductFilters }>
+  getShopFilterOptions(): Promise<ShopProductFilterOptions> // Add the method here
   addCartItem(input: CartItemInput): Promise<{ cart: CartItemInput[] }>
 }
 
@@ -17,13 +18,15 @@ interface ShopPresenterOptions {
 
 function createInitialShop(productType: ProductType | 'all' = 'all'): ShopViewModel {
   return {
-  products: [],
-  filters: { type: productType },
-  sort: 'createdAt',
-  direction: 'desc',
-  hasMore: false,
-  selectedProduct: null,
-}
+    products: [],
+    filters: { type: productType },
+    sort: 'createdAt',
+    direction: 'desc',
+    hasMore: false,
+    selectedProduct: null,
+    availableColors: [], // Initialize empty state
+    availableSizes: [],  // Initialize empty state
+  }
 }
 
 export class ShopPresenter {
@@ -48,8 +51,25 @@ export class ShopPresenter {
     this.view = null
   }
 
+  // Update this to use Promise.all to fetch the initial batch AND the global filters concurrently
   async loadInitial(): Promise<void> {
-    await this.loadBatch({ filters: this.model.filters, batchSize: 20, sort: this.model.sort, direction: this.model.direction }, false)
+    await this.run(async () => {
+      const [batch, filterOptions] = await Promise.all([
+        this.service.listShopProducts({ filters: this.model.filters, batchSize: 20, sort: this.model.sort, direction: this.model.direction }),
+        this.service.getShopFilterOptions()
+      ])
+
+      this.model = {
+        ...this.model,
+        products: batch.products,
+        filters: batch.appliedFilters,
+        nextCursor: batch.nextCursor,
+        hasMore: batch.hasMore,
+        availableColors: filterOptions.colors,
+        availableSizes: filterOptions.sizes,
+      }
+      this.publish()
+    })
   }
 
   async applyFilters(filters: ShopProductFilters, sort: ProductSortKey = this.model.sort, direction: ProductSortDirection = this.model.direction): Promise<void> {
@@ -93,6 +113,8 @@ export class ShopPresenter {
         nextCursor: batch.nextCursor,
         hasMore: batch.hasMore,
         selectedProduct: this.model.selectedProduct,
+        availableColors: this.model.availableColors, // Preserve global colors
+        availableSizes: this.model.availableSizes,   // Preserve global sizes
       }
       this.publish()
     })

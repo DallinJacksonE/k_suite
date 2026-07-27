@@ -1,4 +1,4 @@
-import type { CreateProductInput, Product, ProductSize, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductBatchResponse, UpdateProductInput } from './products.js';
+import type { CreateProductInput, Product, ProductSize, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductBatchResponse, ShopProductFilterOptions, UpdateProductInput } from './products.js';
 
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'cancelled' | 'refunded';
 export type CookieKind = 'session' | 'client' | 'admin';
@@ -579,6 +579,9 @@ export interface MariaDbAccess {
   updateBlogArticle(adminCookie: string, articleId: string, input: UpdateBlogArticleInput): Promise<BlogArticleRecord>;
   deleteBlogArticle(adminCookie: string, articleId: string): Promise<void>;
   listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse>;
+  listAvailableProductFilterOptions(): Promise<ShopProductFilterOptions>;
+  listAvailableProductColors(): Promise<string[]>;
+  listAvailableProductSizes(): Promise<ProductSize[]>;
   getCart(cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CartSnapshot>;
   addCartItem(input: CartItemInput, cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CartResult>;
   updateCartItem(itemId: string, input: UpdateCartItemInput, cookies: { sessionCookie?: string; clientCookie?: string }): Promise<CartSnapshot>;

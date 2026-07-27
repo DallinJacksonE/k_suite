@@ -26,6 +26,7 @@ import type {
   ShopProductListResponse,
   UpdateCartItemInput,
   UpdateProfileInput,
+  ShopProductFilterOptions
 } from './ClientTypes'
 
 export interface HealthResponse {
@@ -50,6 +51,7 @@ export interface ClientApiService {
   listBlogArticles(): Promise<BlogArticle[]>
   listBlogCollections(): Promise<BlogCollection[]>
   listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse>
+  getShopFilterOptions(): Promise<ShopProductFilterOptions>
   addCartItem(input: CartItemInput): Promise<CartResponse>
   getCart(): Promise<CartSnapshot>
   updateCartItem(itemId: string, input: UpdateCartItemInput): Promise<CartSnapshot>
@@ -131,6 +133,10 @@ export class FetchClientApiService implements ClientApiService {
 
   async listShopProducts(request: ShopProductBatchRequest): Promise<ShopProductBatchResponse> {
     return this.request<ShopProductBatchResponse>(`/shop/products?${toShopQuery(request)}`)
+  }
+
+  async getShopFilterOptions(): Promise<ShopProductFilterOptions> {
+    return this.request<ShopProductFilterOptions>('/shop/filters')
   }
 
   async addCartItem(input: CartItemInput): Promise<CartResponse> {

@@ -423,6 +423,27 @@ export const apiDocs = {
         },
         {
             method: 'GET',
+            path: '/api/shop/filters',
+            summary: 'List cached color and size filter options represented by available products.',
+            auth: 'None.',
+            responses: [{ status: 200, description: 'Available product filter options returned.', body: 'ShopProductFilterOptions' }],
+        },
+        {
+            method: 'GET',
+            path: '/api/shop/filters/colors',
+            summary: 'List cached color filter options represented by available plushie products.',
+            auth: 'None.',
+            responses: [{ status: 200, description: 'Available product colors returned.', body: '{ colors: string[] }' }],
+        },
+        {
+            method: 'GET',
+            path: '/api/shop/filters/sizes',
+            summary: 'List cached size filter options represented by available products.',
+            auth: 'None.',
+            responses: [{ status: 200, description: 'Available product sizes returned.', body: '{ sizes: ProductSize[] }' }],
+        },
+        {
+            method: 'GET',
             path: '/api/shop/cart',
             summary: 'Read the current guest or authenticated cart with product snapshots and totals.',
             auth: 'Optional session_cookie or client_cookie.',

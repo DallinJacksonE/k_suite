@@ -12,6 +12,9 @@ import {
   createMarketEvent,
   updateMarketEvent,
   deleteMarketEvent,
+  listAvailableProductFilterOptions,
+  listAvailableProductColors,
+  listAvailableProductSizes,
   listAdminMarketEvents,
   listPublishedBlogArticles,
   listShopProducts,
@@ -328,6 +331,22 @@ test('listShopProducts applies filters before deterministic sorting and paginati
   assert.equal(batch.nextCursor, 'cheap');
   assert.equal(batch.hasMore, true);
   assert.deepEqual(batch.appliedFilters, { type: 'all', saleOnly: true, color: 'red', size: 'medium' });
+});
+
+test('available product filter options are cached and recalculate on product add', async () => {
+  const service = new FakeService();
+  await service.insertAdmin({ email: 'admin@example.com', name: 'Admin', passwordHash: 'hash', salt: 'salt' });
+  await newCookie('admin@example.com', undefined, 'admin', service, { randomBytes: () => 'admin-cookie' });
+  await service.insertProduct({ id: 'available', type: 'plushie', title: 'Available Bear', price: 1000, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'blue' }], sizes: ['small'] });
+  await service.insertProduct({ id: 'hidden', type: 'plushie', title: 'Hidden Bear', price: 1000, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', available: false, colorVariations: [{ name: 'gray' }], sizes: ['large'] });
+
+  assert.deepEqual(await listAvailableProductColors(service), []);
+
+  await addProduct('admin-cookie', { type: 'plushie', title: 'Added Bear', price: 1200, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], sizes: ['medium'] }, service, { randomUUID: () => 'added' });
+
+  assert.deepEqual(await listAvailableProductColors(service), ['blue', 'red']);
+  assert.deepEqual(await listAvailableProductSizes(service), ['small', 'medium']);
+  assert.deepEqual(await listAvailableProductFilterOptions(service), { colors: ['blue', 'red'], sizes: ['small', 'medium'] });
 });
 
 test('cart add rejects unavailable inventory and guest pattern purchases', async () => {

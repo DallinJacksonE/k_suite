@@ -182,6 +182,24 @@ export interface ShopProductBatchResponse {
   appliedFilters: ShopProductFilters
 }
 
+export interface ShopProductFilterOptions {
+  colors: string[]
+  sizes: ProductSize[]
+}
+
+export interface ShopViewModel {
+  products: Product[]
+  filters: ShopProductFilters
+  sort: ProductSortKey
+  direction: ProductSortDirection
+  nextCursor?: string
+  hasMore: boolean
+  selectedProduct: Product | null
+  notice?: string
+  availableColors: string[]
+  availableSizes: ProductSize[]
+}
+
 export interface CartItemInput {
   productId: string
   productType?: ProductType
@@ -284,13 +302,4 @@ export interface CheckoutResult {
   purchasedPatternDownloadsAvailable: boolean
 }
 
-export interface ShopViewModel {
-  products: Product[]
-  filters: ShopProductFilters
-  sort: ProductSortKey
-  direction: ProductSortDirection
-  nextCursor?: string
-  hasMore: boolean
-  selectedProduct: Product | null
-  notice?: string
-}
+

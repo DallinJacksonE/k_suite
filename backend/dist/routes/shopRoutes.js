@@ -10,6 +10,15 @@ export function createShopRouter(deps = {}) {
     router.get('/products', asyncHandler(async (req, res) => {
         res.json(await access.listShopProducts(readProductBatchRequest(req)));
     }));
+    router.get('/filters', asyncHandler(async (_req, res) => {
+        res.json(await access.listAvailableProductFilterOptions());
+    }));
+    router.get('/filters/colors', asyncHandler(async (_req, res) => {
+        res.json({ colors: await access.listAvailableProductColors() });
+    }));
+    router.get('/filters/sizes', asyncHandler(async (_req, res) => {
+        res.json({ sizes: await access.listAvailableProductSizes() });
+    }));
     router.get('/cart', asyncHandler(async (req, res) => {
         res.json(await access.getCart(readCartCookies(req)));
     }));

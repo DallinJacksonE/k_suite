@@ -106,6 +106,11 @@ export interface ShopProductBatchResponse {
   appliedFilters: ShopProductFilters;
 }
 
+export interface ShopProductFilterOptions {
+  colors: string[];
+  sizes: ProductSize[];
+}
+
 export interface ProductPhotoUploadResult {
   bucket: string;
   key: string;

@@ -10,7 +10,9 @@ import { createOrderEmailMessage } from '../email/OrderEmailTemplates.js';
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const defaultService = createMariaDbService();
+const productFilterOptionCaches = new WeakMap();
 export function createMariaDbAccess(service = defaultService, runtime = {}) {
+    const productFilterOptionCache = getProductFilterOptionCache(service);
     return {
         checkUserPassword: (email, password) => checkUserPassword(email, password, service),
         loginUser: (input) => loginUser(input, service, runtime),
@@ -30,7 +32,7 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         newCookie: (email, cookie, kind) => newCookie(email, cookie, kind, service, runtime),
         checkedout: (email, cookie, paidAmount) => checkedout(email, cookie, paidAmount, service, runtime),
         adminLogin: (input) => adminLogin(input, service, runtime),
-        addProduct: (adminCookie, productDTO) => addProduct(adminCookie, productDTO, service, runtime),
+        addProduct: (adminCookie, productDTO) => addProduct(adminCookie, productDTO, service, runtime, productFilterOptionCache),
         listAdminProducts: (adminCookie) => listAdminProducts(adminCookie, service),
         editProduct: (adminCookie, productId, productDTO) => editProduct(adminCookie, productId, productDTO, service),
         removeProduct: (adminCookie, productId) => removeProduct(adminCookie, productId, service),
@@ -45,6 +47,9 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
         updateBlogArticle: (adminCookie, articleId, input) => updateBlogArticle(adminCookie, articleId, input, service),
         deleteBlogArticle: (adminCookie, articleId) => deleteBlogArticle(adminCookie, articleId, service),
         listShopProducts: (request) => listShopProducts(request, service),
+        listAvailableProductFilterOptions: () => productFilterOptionCache.list(),
+        listAvailableProductColors: () => productFilterOptionCache.listColors(),
+        listAvailableProductSizes: () => productFilterOptionCache.listSizes(),
         getCart: (cookies) => getCart(cookies, service, runtime),
         addCartItem: (input, cookies) => addCartItem(input, cookies, service, runtime),
         updateCartItem: (itemId, input, cookies) => updateCartItem(itemId, input, cookies, service, runtime),
@@ -64,6 +69,7 @@ export function createMariaDbAccess(service = defaultService, runtime = {}) {
 export async function initializeMariaDbAccess(service = defaultService) {
     await service.initialize();
     await bootstrapAdmin(service);
+    await recalculateAvailableProductFilterOptions(service);
 }
 export async function closeMariaDbAccess(service = defaultService) { await service.close(); }
 export async function bootstrapAdmin(service = defaultService, config = loadBackendConfig) {
@@ -221,10 +227,12 @@ export async function checkedout(email, cookie, paidAmount, service = defaultSer
     await service.updateUser(user.email, { cart: [] });
     return orders;
 }
-export async function addProduct(adminCookie, productDTO, service = defaultService, runtime = {}) {
+export async function addProduct(adminCookie, productDTO, service = defaultService, runtime = {}, productFilterOptionCache = getProductFilterOptionCache(service)) {
     await requireAdminCookie(adminCookie, service);
     assertRequired(productDTO.title, 'title');
-    return service.insertProduct({ ...productDTO, id: createUuid(runtime) });
+    const product = await service.insertProduct({ ...productDTO, id: createUuid(runtime) });
+    await productFilterOptionCache.recalculate();
+    return product;
 }
 export async function listAdminProducts(adminCookie, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.listProducts(undefined, true); }
 export async function editProduct(adminCookie, productId, productDTO, service = defaultService) { await requireAdminCookie(adminCookie, service); return service.updateProduct(productId, productDTO); }
@@ -253,6 +261,18 @@ export async function listShopProducts(request, service = defaultService) {
     const products = filtered.slice(safeStart, safeStart + batchSize);
     const nextCursor = products.at(-1)?.id;
     return { products, nextCursor, hasMore: safeStart + batchSize < filtered.length, appliedFilters: filters };
+}
+export async function recalculateAvailableProductFilterOptions(service = defaultService) {
+    return getProductFilterOptionCache(service).recalculate();
+}
+export async function listAvailableProductFilterOptions(service = defaultService) {
+    return getProductFilterOptionCache(service).list();
+}
+export async function listAvailableProductColors(service = defaultService) {
+    return getProductFilterOptionCache(service).listColors();
+}
+export async function listAvailableProductSizes(service = defaultService) {
+    return getProductFilterOptionCache(service).listSizes();
 }
 export async function getCart(cookies, service = defaultService, runtime = {}) {
     const target = await getCartTarget(cookies, service, runtime);
@@ -390,6 +410,47 @@ function matchesProductFilters(product, filters = {}) {
         return false;
     return true;
 }
+function getProductFilterOptionCache(service) {
+    let cache = productFilterOptionCaches.get(service);
+    if (!cache) {
+        cache = new ProductFilterOptionCache(service);
+        productFilterOptionCaches.set(service, cache);
+    }
+    return cache;
+}
+class ProductFilterOptionCache {
+    service;
+    options = { colors: [], sizes: [] };
+    constructor(service) {
+        this.service = service;
+    }
+    async recalculate() {
+        const colors = new Set();
+        const sizes = new Set();
+        for (const product of await this.service.listProducts(undefined, false)) {
+            for (const size of product.sizes ?? [])
+                sizes.add(size);
+            if (product.type === 'plushie') {
+                for (const variation of product.colorVariations) {
+                    const color = readColorName(variation).trim();
+                    if (color)
+                        colors.add(color);
+                }
+            }
+        }
+        this.options = { colors: sortText([...colors]), sizes: sortProductSizes([...sizes]) };
+        return this.list();
+    }
+    async list() {
+        return { colors: [...this.options.colors], sizes: [...this.options.sizes] };
+    }
+    async listColors() {
+        return [...this.options.colors];
+    }
+    async listSizes() {
+        return [...this.options.sizes];
+    }
+}
 function applyProductSort(products, sort, direction) {
     const multiplier = direction === 'asc' ? 1 : -1;
     return [...products].sort((left, right) => {
@@ -406,6 +467,8 @@ function compareSortValue(left, right, sort) {
 }
 function effectivePrice(product) { return product.salePrice ?? product.price; }
 function readColorName(variation) { return typeof variation === 'string' ? variation : String(variation.name ?? ''); }
+function sortText(values) { return values.sort((left, right) => left.localeCompare(right)); }
+function sortProductSizes(values) { const order = ['extra-small', 'small', 'medium', 'large', 'extra-large']; return values.sort((left, right) => order.indexOf(left) - order.indexOf(right)); }
 function timestamp(value) { return value ? new Date(value).getTime() : 0; }
 async function requireUserWithCookie(email, cookie, service, kind) {
     const normalizedEmail = normalizeEmail(email);

@@ -5,7 +5,7 @@ import { readCookie, setClientCookie, setSessionCookie } from './cookieHelpers.j
 import { requireCsrfToken } from './csrfHelpers.js';
 
 export interface ShopRouterDeps {
-  access?: Pick<MariaDbAccess, 'listShopProducts' | 'getCart' | 'addCartItem' | 'updateCartItem' | 'removeCartItem' | 'estimateCheckout' | 'checkout'>;
+  access?: Pick<MariaDbAccess, 'listShopProducts' | 'listAvailableProductFilterOptions' | 'listAvailableProductColors' | 'listAvailableProductSizes' | 'getCart' | 'addCartItem' | 'updateCartItem' | 'removeCartItem' | 'estimateCheckout' | 'checkout'>;
 }
 
 export function createShopRouter(deps: ShopRouterDeps = {}): Router {
@@ -16,6 +16,15 @@ export function createShopRouter(deps: ShopRouterDeps = {}): Router {
   mountProductRoutes(router, access, 'pattern', '/patterns');
   router.get('/products', asyncHandler(async (req, res) => {
     res.json(await access.listShopProducts(readProductBatchRequest(req)));
+  }));
+  router.get('/filters', asyncHandler(async (_req, res) => {
+    res.json(await access.listAvailableProductFilterOptions());
+  }));
+  router.get('/filters/colors', asyncHandler(async (_req, res) => {
+    res.json({ colors: await access.listAvailableProductColors() });
+  }));
+  router.get('/filters/sizes', asyncHandler(async (_req, res) => {
+    res.json({ sizes: await access.listAvailableProductSizes() });
   }));
   router.get('/cart', asyncHandler(async (req, res) => {
     res.json(await access.getCart(readCartCookies(req)));

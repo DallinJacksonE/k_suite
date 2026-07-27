@@ -108,6 +108,9 @@ test('user auth routes throttle repeated login attempts', async () => {
 test('shop routes list products and maintain guest cart with session_cookie', async () => {
   const access = {
     listShopProducts: async (request) => ({ products: [{ id: `${request.filters.type === 'all' ? 'plushie' : request.filters.type}-1`, type: request.filters.type === 'all' ? 'plushie' : request.filters.type, price: 10, isSaleItem: false, description: 'd', thumbnailImage: 'thumb', available: true, sizes: [], readyToShip: true, colorVariations: [{ name: 'red' }] }], nextCursor: 'cursor-1', hasMore: false, appliedFilters: request.filters }),
+    listAvailableProductFilterOptions: async () => ({ colors: ['red'], sizes: ['medium'] }),
+    listAvailableProductColors: async () => ['red'],
+    listAvailableProductSizes: async () => ['medium'],
     addCartItem: async (input, cookies) => ({ cookie: cookies.sessionCookie ?? 'session-1', cookieName: cookies.clientCookie ? 'client_cookie' : 'session_cookie', cart: [input] }),
     removeCartItem: async (productId, cookies) => ({ cookie: cookies.sessionCookie ?? 'session-1', cookieName: 'session_cookie', cart: [] }),
     getCart: async () => ({ items: [{ itemId: 'p1:red:medium', productId: 'p1', productType: 'plushie', title: 'Bear', thumbnailImage: 'thumb', quantity: 1, unitPrice: 1000, lineTotal: 1000, selectedColor: 'red', selectedSize: 'medium' }], subtotal: 1000, containsPatterns: false, guestCheckoutAllowed: true }),
@@ -137,6 +140,15 @@ test('shop routes list products and maintain guest cart with session_cookie', as
     assert.equal(filtered.body.appliedFilters.saleOnly, true);
     assert.equal(filtered.body.appliedFilters.color, 'red');
     assert.equal(filtered.body.nextCursor, 'cursor-1');
+
+    const filters = await request(server, '/shop/filters');
+    assert.deepEqual(filters.body, { colors: ['red'], sizes: ['medium'] });
+
+    const colors = await request(server, '/shop/filters/colors');
+    assert.deepEqual(colors.body.colors, ['red']);
+
+    const sizes = await request(server, '/shop/filters/sizes');
+    assert.deepEqual(sizes.body.sizes, ['medium']);
 
     const rejectedAdd = await request(server, '/shop/plushies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ productId: 'p1', quantity: 1, colorVariation: 'red' }) });
     assert.equal(rejectedAdd.response.status, 403);

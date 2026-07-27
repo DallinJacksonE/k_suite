@@ -57,6 +57,7 @@ import type {
   ServiceHealthReport,
   ShopProductBatchRequest,
   ShopProductBatchResponse,
+  ShopProductFilterOptions,
 } from '@k_suite/shared';
 
 import { createMariaDbService } from './mariadb_service.js';
@@ -68,6 +69,7 @@ export type { AccessResult, AccessRuntime, AddUserInput, AdminLoginInput, AdminL
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const defaultService = createMariaDbService();
+const productFilterOptionCaches = new WeakMap<MariaDbServiceLike, ProductFilterOptionCache>();
 
 interface BackendConfig { admin: { name: string; email: string; password: string } }
 interface CheckoutPaymentProcessor { charge(input: CheckoutPaymentInput): Promise<CheckoutPaymentResult> }
@@ -76,6 +78,7 @@ interface CheckoutPaymentResult { provider: 'test' | 'square'; status: 'paid' | 
 type BackendAccessRuntime = AccessRuntime & { emailService?: EmailService; paymentProcessor?: CheckoutPaymentProcessor };
 
 export function createMariaDbAccess(service: MariaDbServiceLike = defaultService, runtime: BackendAccessRuntime = {}): MariaDbAccess {
+  const productFilterOptionCache = getProductFilterOptionCache(service);
   return {
     checkUserPassword: (email, password) => checkUserPassword(email, password, service),
     loginUser: (input) => loginUser(input, service, runtime),
@@ -95,7 +98,7 @@ export function createMariaDbAccess(service: MariaDbServiceLike = defaultService
     newCookie: (email, cookie, kind) => newCookie(email, cookie, kind, service, runtime),
     checkedout: (email, cookie, paidAmount) => checkedout(email, cookie, paidAmount, service, runtime),
     adminLogin: (input) => adminLogin(input, service, runtime),
-    addProduct: (adminCookie, productDTO) => addProduct(adminCookie, productDTO, service, runtime),
+    addProduct: (adminCookie, productDTO) => addProduct(adminCookie, productDTO, service, runtime, productFilterOptionCache),
     listAdminProducts: (adminCookie) => listAdminProducts(adminCookie, service),
     editProduct: (adminCookie, productId, productDTO) => editProduct(adminCookie, productId, productDTO, service),
     removeProduct: (adminCookie, productId) => removeProduct(adminCookie, productId, service),
@@ -110,6 +113,9 @@ export function createMariaDbAccess(service: MariaDbServiceLike = defaultService
     updateBlogArticle: (adminCookie, articleId, input) => updateBlogArticle(adminCookie, articleId, input, service),
     deleteBlogArticle: (adminCookie, articleId) => deleteBlogArticle(adminCookie, articleId, service),
     listShopProducts: (request) => listShopProducts(request, service),
+    listAvailableProductFilterOptions: () => productFilterOptionCache.list(),
+    listAvailableProductColors: () => productFilterOptionCache.listColors(),
+    listAvailableProductSizes: () => productFilterOptionCache.listSizes(),
     getCart: (cookies) => getCart(cookies, service, runtime),
     addCartItem: (input, cookies) => addCartItem(input, cookies, service, runtime),
     updateCartItem: (itemId, input, cookies) => updateCartItem(itemId, input, cookies, service, runtime),
@@ -130,6 +136,7 @@ export function createMariaDbAccess(service: MariaDbServiceLike = defaultService
 export async function initializeMariaDbAccess(service: MariaDbServiceLike = defaultService): Promise<void> {
   await service.initialize();
   await bootstrapAdmin(service);
+  await recalculateAvailableProductFilterOptions(service);
 }
 export async function closeMariaDbAccess(service: MariaDbServiceLike = defaultService): Promise<void> { await service.close(); }
 
@@ -272,10 +279,12 @@ export async function checkedout(email: string, cookie: string, paidAmount: numb
   return orders;
 }
 
-export async function addProduct(adminCookie: string, productDTO: CreateProductInput, service: MariaDbServiceLike = defaultService, runtime: AccessRuntime = {}): Promise<Product> {
+export async function addProduct(adminCookie: string, productDTO: CreateProductInput, service: MariaDbServiceLike = defaultService, runtime: AccessRuntime = {}, productFilterOptionCache = getProductFilterOptionCache(service)): Promise<Product> {
   await requireAdminCookie(adminCookie, service);
   assertRequired(productDTO.title, 'title');
-  return service.insertProduct({ ...productDTO, id: createUuid(runtime) });
+  const product = await service.insertProduct({ ...productDTO, id: createUuid(runtime) });
+  await productFilterOptionCache.recalculate();
+  return product;
 }
 export async function listAdminProducts(adminCookie: string, service: MariaDbServiceLike = defaultService): Promise<Product[]> { await requireAdminCookie(adminCookie, service); return service.listProducts(undefined, true); }
 export async function editProduct(adminCookie: string, productId: string, productDTO: UpdateProductInput, service: MariaDbServiceLike = defaultService): Promise<Product> { await requireAdminCookie(adminCookie, service); return service.updateProduct(productId, productDTO); }
@@ -302,6 +311,22 @@ export async function listShopProducts(request: ShopProductBatchRequest, service
   const products = filtered.slice(safeStart, safeStart + batchSize);
   const nextCursor = products.at(-1)?.id;
   return { products, nextCursor, hasMore: safeStart + batchSize < filtered.length, appliedFilters: filters };
+}
+
+export async function recalculateAvailableProductFilterOptions(service: MariaDbServiceLike = defaultService): Promise<ShopProductFilterOptions> {
+  return getProductFilterOptionCache(service).recalculate();
+}
+
+export async function listAvailableProductFilterOptions(service: MariaDbServiceLike = defaultService): Promise<ShopProductFilterOptions> {
+  return getProductFilterOptionCache(service).list();
+}
+
+export async function listAvailableProductColors(service: MariaDbServiceLike = defaultService): Promise<string[]> {
+  return getProductFilterOptionCache(service).listColors();
+}
+
+export async function listAvailableProductSizes(service: MariaDbServiceLike = defaultService): Promise<ProductSize[]> {
+  return getProductFilterOptionCache(service).listSizes();
 }
 
 export async function getCart(cookies: { sessionCookie?: string; clientCookie?: string }, service: MariaDbServiceLike = defaultService, runtime: AccessRuntime = {}): Promise<CartSnapshot> {
@@ -446,6 +471,49 @@ function matchesProductFilters(product: Product, filters: ShopProductBatchReques
   return true;
 }
 
+function getProductFilterOptionCache(service: MariaDbServiceLike): ProductFilterOptionCache {
+  let cache = productFilterOptionCaches.get(service);
+  if (!cache) {
+    cache = new ProductFilterOptionCache(service);
+    productFilterOptionCaches.set(service, cache);
+  }
+  return cache;
+}
+
+class ProductFilterOptionCache {
+  private options: ShopProductFilterOptions = { colors: [], sizes: [] };
+
+  constructor(private readonly service: MariaDbServiceLike) {}
+
+  async recalculate(): Promise<ShopProductFilterOptions> {
+    const colors = new Set<string>();
+    const sizes = new Set<ProductSize>();
+    for (const product of await this.service.listProducts(undefined, false)) {
+      for (const size of product.sizes ?? []) sizes.add(size);
+      if (product.type === 'plushie') {
+        for (const variation of product.colorVariations) {
+          const color = readColorName(variation).trim();
+          if (color) colors.add(color);
+        }
+      }
+    }
+    this.options = { colors: sortText([...colors]), sizes: sortProductSizes([...sizes]) };
+    return this.list();
+  }
+
+  async list(): Promise<ShopProductFilterOptions> {
+    return { colors: [...this.options.colors], sizes: [...this.options.sizes] };
+  }
+
+  async listColors(): Promise<string[]> {
+    return [...this.options.colors];
+  }
+
+  async listSizes(): Promise<ProductSize[]> {
+    return [...this.options.sizes];
+  }
+}
+
 function applyProductSort(products: Product[], sort: ProductSortKey, direction: ProductSortDirection): Product[] {
   const multiplier = direction === 'asc' ? 1 : -1;
   return [...products].sort((left, right) => {
@@ -462,6 +530,8 @@ function compareSortValue(left: Product, right: Product, sort: ProductSortKey): 
 
 function effectivePrice(product: Product): number { return product.salePrice ?? product.price; }
 function readColorName(variation: unknown): string { return typeof variation === 'string' ? variation : String((variation as { name?: unknown }).name ?? ''); }
+function sortText(values: string[]): string[] { return values.sort((left, right) => left.localeCompare(right)); }
+function sortProductSizes(values: ProductSize[]): ProductSize[] { const order = ['extra-small', 'small', 'medium', 'large', 'extra-large']; return values.sort((left, right) => order.indexOf(left) - order.indexOf(right)); }
 function timestamp(value: Date | string | undefined): number { return value ? new Date(value).getTime() : 0; }
 
 async function requireUserWithCookie(email: string, cookie: string, service: MariaDbServiceLike, kind: CookieKind): Promise<UserRecord> {
