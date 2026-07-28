@@ -6,7 +6,7 @@ import { useClientSession } from '../components/auth/useClientSession'
 import { ClientShell } from '../components/layout/ClientShell'
 import { CartPresenter, type CartPresenterView, type CartViewModel } from '../presenters/CartPresenter'
 import { FetchClientApiService } from '../service/ClientApiService'
-import type { CheckoutEstimateRequest, CheckoutPublicConfig, CheckoutRequest, ClientProfileResponse } from '../service/ClientTypes'
+import type { CheckoutPublicConfig, CheckoutRequest, ClientProfileResponse } from '../service/ClientTypes'
 
 const emptyCart: CartViewModel = { items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }
 
@@ -28,7 +28,6 @@ export function CartView() {
     return () => presenter.detach()
   }, [presenter])
 
-  const estimate = async (input: CheckoutEstimateRequest) => presenter.estimate(input)
   const openCheckout = async () => {
     setError(null)
     setCheckoutOpen(true)
@@ -59,9 +58,9 @@ export function CartView() {
           {cart.items.map((item) => <CartItemRow key={item.itemId} item={item} onQuantityChange={(itemId, quantity) => presenter.updateQuantity(itemId, quantity)} onRemove={(itemToRemove) => presenter.removeItem(itemToRemove)} />)}
           {!cart.items.length && !busy ? <p>Your cart is empty.</p> : null}
         </div>
-        <CartSummary cart={cart} estimate={cart.estimate} onEstimate={estimate} onCheckout={openCheckout} />
+        <CartSummary cart={cart} estimate={cart.estimate} onCheckout={openCheckout} />
       </section>
-      {checkoutOpen ? <CheckoutModal session={session} profile={profile} config={checkoutConfig} busy={busy} error={error} onClose={() => setCheckoutOpen(false)} onSubmit={checkout} /> : null}
+      {checkoutOpen ? <CheckoutModal cart={cart} estimate={cart.estimate} session={session} profile={profile} config={checkoutConfig} busy={busy} error={error} onClose={() => setCheckoutOpen(false)} onSubmit={checkout} /> : null}
     </ClientShell>
   )
 }

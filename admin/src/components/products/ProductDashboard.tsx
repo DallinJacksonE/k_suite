@@ -83,6 +83,7 @@ export function ProductDashboard({ productType, products, busy, onCreate, onUpda
             <form onSubmit={(event) => void submitCreate(event)} className="form-grid two-column">
               <label>Title<input name="title" required /></label>
               <label>Price<input name="price" type="number" min="0.01" step="0.01" required /></label>
+              <label className="checkbox-label"><span>Sale Item<input name="isSaleItem" type="checkbox" /></span></label>
               <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" /></label>
               <label>Tags<input name="tags" placeholder="featured, market" /></label>
               {productType === 'plushie' ? <><label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" /></label><SizePicker sizes={sizes} onChange={setSizes} /></> : null}
@@ -102,7 +103,6 @@ export function ProductDashboard({ productType, products, busy, onCreate, onUpda
                 <><UploadControl label="Pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
               )}
               <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked />Available</label>
-              <label className="checkbox-label"><input name="isSaleItem" type="checkbox" />Sale item</label>
               <div className="button-row full-width"><button type="submit" disabled={busy}>Create {productLabel}</button><button type="button" onClick={resetCreateForm} disabled={busy}>Cancel</button></div>
             </form>
           </div>

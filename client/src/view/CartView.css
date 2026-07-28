@@ -56,7 +56,8 @@
 }
 
 .checkoutForm,
-.checkoutSection {
+.checkoutSection,
+.checkoutAddressFields {
   display: grid;
   gap: var(--space-4);
 }
@@ -69,17 +70,76 @@
   background: rgba(255, 255, 255, 0.56);
 }
 
-.checkoutSection label {
+.checkoutSection label,
+.checkoutAddressFields label {
   display: grid;
   gap: var(--space-2);
   font-weight: 700;
 }
 
-.checkoutSection input {
+.checkoutSection input,
+.checkoutAddressFields input {
   border: 1px solid rgba(91, 63, 44, 0.24);
   border-radius: 14px;
   padding: 0.85rem 1rem;
   font: inherit;
+}
+
+.checkoutBillingSection {
+  gap: var(--space-5);
+}
+
+.checkoutCheckbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkoutCheckbox input {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+}
+
+.squareWalletGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+
+.squareWalletButton {
+  display: grid;
+  place-items: center;
+  width: min(100%, 240px);
+  min-height: 2.8rem;
+  overflow: hidden;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.squareWalletButtonHidden {
+  display: none;
+}
+
+#square-google-pay-container:empty::before,
+#square-apple-pay-container:empty::before {
+  width: 100%;
+  min-height: 2.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #fff;
+  background: #000;
+  font-weight: 800;
+}
+
+#square-google-pay-container:empty::before {
+  content: 'Google Pay';
+}
+
+#square-apple-pay-container:empty::before {
+  content: 'Apple Pay';
 }
 
 .checkoutAccountNotice {

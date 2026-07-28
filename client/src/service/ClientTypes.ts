@@ -196,6 +196,7 @@ export interface ShopViewModel {
   hasMore: boolean
   selectedProduct: Product | null
   notice?: string
+  purchasedPatternProductIds: string[]
   availableColors: string[]
   availableSizes: ProductSize[]
 }

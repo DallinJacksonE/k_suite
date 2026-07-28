@@ -1,4 +1,4 @@
-import type { CartItemInput, ClientSessionState, Product, ProductSortDirection, ProductSortKey, ProductType, ShopProductBatchRequest, ShopProductFilters, ShopProductFilterOptions, ShopViewModel } from '../service/ClientTypes'
+import type { CartItemInput, ClientSessionState, Product, ProductSortDirection, ProductSortKey, ProductType, PurchasedPatternDownload, ShopProductBatchRequest, ShopProductFilters, ShopProductFilterOptions, ShopViewModel } from '../service/ClientTypes'
 
 export interface ShopPresenterView {
   setShop(model: ShopViewModel): void
@@ -9,6 +9,8 @@ export interface ShopPresenterView {
 export interface ShopService {
   listShopProducts(request: ShopProductBatchRequest): Promise<{ products: Product[]; nextCursor?: string; hasMore: boolean; appliedFilters: ShopProductFilters }>
   getShopFilterOptions(): Promise<ShopProductFilterOptions> // Add the method here
+  listPurchasedPatterns(): Promise<PurchasedPatternDownload[]>
+  createPurchasedPatternDownload(productId: string): Promise<PurchasedPatternDownload>
   addCartItem(input: CartItemInput): Promise<{ cart: CartItemInput[] }>
 }
 
@@ -24,6 +26,7 @@ function createInitialShop(productType: ProductType | 'all' = 'all'): ShopViewMo
     direction: 'desc',
     hasMore: false,
     selectedProduct: null,
+    purchasedPatternProductIds: [],
     availableColors: [], // Initialize empty state
     availableSizes: [],  // Initialize empty state
   }
@@ -54,9 +57,10 @@ export class ShopPresenter {
   // Update this to use Promise.all to fetch the initial batch AND the global filters concurrently
   async loadInitial(): Promise<void> {
     await this.run(async () => {
-      const [batch, filterOptions] = await Promise.all([
+      const [batch, filterOptions, purchasedPatterns] = await Promise.all([
         this.service.listShopProducts({ filters: this.model.filters, batchSize: 20, sort: this.model.sort, direction: this.model.direction }),
-        this.service.getShopFilterOptions()
+        this.service.getShopFilterOptions(),
+        this.session.status === 'authenticated' ? this.service.listPurchasedPatterns() : Promise.resolve([]),
       ])
 
       this.model = {
@@ -65,6 +69,7 @@ export class ShopPresenter {
         filters: batch.appliedFilters,
         nextCursor: batch.nextCursor,
         hasMore: batch.hasMore,
+        purchasedPatternProductIds: purchasedPatterns.map((pattern) => pattern.productId),
         availableColors: filterOptions.colors,
         availableSizes: filterOptions.sizes,
       }
@@ -102,6 +107,18 @@ export class ShopPresenter {
     })
   }
 
+  async createPatternAccessLink(productId: string): Promise<PurchasedPatternDownload | null> {
+    if (!this.model.purchasedPatternProductIds.includes(productId)) return null
+
+    let download: PurchasedPatternDownload | null = null
+    await this.run(async () => {
+      download = await this.service.createPurchasedPatternDownload(productId)
+      this.model = { ...this.model, notice: 'Opening your pattern PDF.' }
+      this.publish()
+    })
+    return download
+  }
+
   private async loadBatch(request: ShopProductBatchRequest, append: boolean): Promise<void> {
     await this.run(async () => {
       const batch = await this.service.listShopProducts(request)
@@ -113,6 +130,7 @@ export class ShopPresenter {
         nextCursor: batch.nextCursor,
         hasMore: batch.hasMore,
         selectedProduct: this.model.selectedProduct,
+        purchasedPatternProductIds: this.model.purchasedPatternProductIds,
         availableColors: this.model.availableColors, // Preserve global colors
         availableSizes: this.model.availableSizes,   // Preserve global sizes
       }

@@ -72,6 +72,7 @@ const PASSWORD_KEY_LENGTH = 64;
 const FREE_SHIPPING_THRESHOLD = 80;
 const STANDARD_SHIPPING = 10;
 const UTAH_TAX_RATE = 0.0725;
+const FULFILLMENT_NOTIFICATION_EMAIL = 'kaylie.beth.jackson@gmail.com';
 const defaultService = createMariaDbService();
 const productFilterOptionCaches = new WeakMap<MariaDbServiceLike, ProductFilterOptionCache>();
 
@@ -384,7 +385,7 @@ export async function estimateCheckout(input: CheckoutEstimateRequest, cookies: 
   const snapshot = await getCart(cookies, service, runtime);
   if (!snapshot.items.length) throw new Error('Cart is empty.');
   if (!snapshot.guestCheckoutAllowed) throw new Error('Please log in to check out with patterns.');
-  const shipping = shippingFor(snapshot.subtotal);
+  const shipping = shippingForItems(snapshot.items);
   const tax = calculateTax(snapshot.subtotal, input.shippingAddress.state);
   return { subtotal: snapshot.subtotal, shipping, tax, discount: 0, grandTotal: snapshot.subtotal + shipping + tax, currency: 'USD' };
 }
@@ -408,10 +409,11 @@ export async function checkout(input: CheckoutRequest, cookies: { sessionCookie?
   if (containsPatterns && target.cookieName !== 'client_cookie') throw new Error('Please log in to check out with patterns.');
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
-  const shipping = shippingFor(subtotal);
+  const shipping = shippingForItems(lineItems);
   const tax = calculateTax(subtotal, input.shippingAddress.region);
   const totals = { subtotal, discountTotal: 0, shipping, tax, grandTotal: subtotal + shipping + tax };
   const payment = await chargeCheckoutPayment({ idempotencyKey: input.idempotencyKey, amount: totals.grandTotal, currency: 'USD', paymentToken: input.paymentToken }, runtime);
+  const orderStatus: OrderStatus = payment.status === 'paid' && lineItems.every((item) => item.productType === 'pattern') ? 'fulfilled' : payment.status === 'paid' ? 'paid' : 'pending';
   const order = await service.insertOrder({
     orderId: createUuid(runtime),
     idempotencyKey: input.idempotencyKey,
@@ -427,12 +429,13 @@ export async function checkout(input: CheckoutRequest, cookies: { sessionCookie?
     },
     clientInstructions: lineItems.map((item) => item.clientInstructions).filter(Boolean).join('\n'),
     chargedAmount: totals.grandTotal,
-    status: payment.status === 'paid' ? 'paid' : 'pending',
+    status: orderStatus,
   });
 
   await target.save([]);
-  if (order.status === 'paid') await grantPurchasedPatterns(order, service);
+  if (order.status === 'paid' || order.status === 'fulfilled') await grantPurchasedPatterns(order, service);
   await sendOrderEmail('order_created', order, runtime);
+  if (lineItems.some((item) => item.productType === 'plushie')) await sendNewPlushieOrderNotification(order, runtime);
   return toCheckoutResult(order);
 }
 
@@ -604,7 +607,13 @@ async function toCartLineItem(item: CartItem, service: MariaDbServiceLike) { con
 async function toOrderLineItem(item: CartItem, service: MariaDbServiceLike) { const product = await service.findProductById(item.productId); if (!product || !product.available) throw new Error(`Product not found: ${item.productId}`); if (product.inventoryCount !== undefined && product.inventoryCount < item.quantity) throw new Error('Product is out of stock.'); const unitPrice = effectivePrice(product); return { productId: item.productId, productType: product.type, title: product.title, quantity: item.quantity, unitPrice, salePrice: product.salePrice, selectedColor: item.selectedColor ?? item.colorVariation, selectedSize: item.selectedSize, clientInstructions: item.clientInstructions, lineTotal: unitPrice * item.quantity, pdfKey: product.type === 'pattern' ? product.pdfKey : undefined }; }
 function itemIdForCartItem(item: CartItem): string { return [item.productId, item.colorVariation ?? item.selectedColor ?? '', item.selectedSize ?? ''].join(':'); }
 function isProductSize(value: unknown): value is ProductSize { return typeof value === 'string' && ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
-function shippingFor(subtotal: number): number { return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING; }
+function shippingForItems(items: Array<{ productType: ProductType; lineTotal: number }>): number {
+  const shippableSubtotal = items
+    .filter((item) => item.productType !== 'pattern')
+    .reduce((sum, item) => sum + item.lineTotal, 0);
+  if (shippableSubtotal === 0) return 0;
+  return shippableSubtotal >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING;
+}
 function calculateTax(subtotal: number, state?: string): number { return roundMoney(subtotal * taxRateFor(state)); }
 function taxRateFor(state?: string): number { return state?.trim().toUpperCase() === 'UT' ? UTAH_TAX_RATE : 0; }
 function roundMoney(value: number): number { return Math.round(value * 100) / 100; }
@@ -612,6 +621,7 @@ async function getCartTarget(cookies: { sessionCookie?: string; clientCookie?: s
 function assertValidOrderStatus(status: OrderStatus): void { if (!['pending', 'paid', 'fulfilled', 'shipped', 'cancelled', 'refunded'].includes(status)) throw new Error('Invalid order status.'); }
 async function sendOrderStatusEmail(order: OrderRecord, runtime: BackendAccessRuntime): Promise<void> { if (order.status === 'fulfilled') await sendOrderEmail('order_fulfilled', order, runtime); if (order.status === 'shipped') await sendOrderEmail('order_shipped', order, runtime); if (order.status === 'cancelled') await sendOrderEmail('order_cancelled', order, runtime); }
 async function sendOrderEmail(event: 'order_created' | 'order_fulfilled' | 'order_shipped' | 'order_cancelled', order: OrderRecord, runtime: BackendAccessRuntime): Promise<void> { await (runtime.emailService ?? createConfiguredEmailService()).send(createOrderEmailMessage(event, order)); }
+async function sendNewPlushieOrderNotification(order: OrderRecord, runtime: BackendAccessRuntime): Promise<void> { await (runtime.emailService ?? createConfiguredEmailService()).send({ to: FULFILLMENT_NOTIFICATION_EMAIL, subject: 'New K Suite plushie order to fulfill', text: `Order #${order.orderId} has a new plushie order to fulfill on the admin page.` }); }
 function toCheckoutResult(order: OrderRecord): CheckoutResult { const totals = (order.details.totals ?? {}) as Partial<CheckoutResult['totals']>; return { orderId: order.orderId, status: order.status, totals: { subtotal: Number(totals.subtotal ?? 0), discountTotal: Number(totals.discountTotal ?? 0), shipping: Number(totals.shipping ?? 0), tax: Number(totals.tax ?? 0), grandTotal: Number(totals.grandTotal ?? order.chargedAmount) }, purchasedPatternDownloadsAvailable: order.status === 'paid' || order.status === 'fulfilled' || order.status === 'shipped' }; }
 async function chargeCheckoutPayment(input: CheckoutPaymentInput, runtime: BackendAccessRuntime): Promise<CheckoutPaymentResult> { return (runtime.paymentProcessor ?? createCheckoutPaymentProcessor()).charge(input); }
 function createCheckoutPaymentProcessor(config: BackendConfig = readBackendConfigSync()): CheckoutPaymentProcessor { return shouldUseSquare(config) ? new SquareCheckoutPaymentProcessor(readSquarePaymentConfig(config)) : new TestCheckoutPaymentProcessor(); }

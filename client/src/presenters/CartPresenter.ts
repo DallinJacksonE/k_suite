@@ -38,21 +38,21 @@ export class CartPresenter {
 
   async loadCart(): Promise<void> {
     await this.run(async () => {
-      this.model = await this.service.getCart()
+      await this.applyCart(await this.service.getCart())
       this.publish()
     })
   }
 
   async updateQuantity(itemId: string, quantity: number): Promise<void> {
     await this.run(async () => {
-      this.model = { ...await this.service.updateCartItem(itemId, { quantity }), estimate: this.model.estimate }
+      await this.applyCart(await this.service.updateCartItem(itemId, { quantity }))
       this.publish()
     })
   }
 
   async removeItem(item: CartLineItemSnapshot): Promise<void> {
     await this.run(async () => {
-      this.model = { ...await this.service.removeCartItem(item.productType, item.itemId), estimate: this.model.estimate }
+      await this.applyCart(await this.service.removeCartItem(item.productType, item.itemId))
       this.publish()
     })
   }
@@ -90,9 +90,22 @@ export class CartPresenter {
   private publish(): void {
     this.view?.setCart(this.model)
   }
+
+  private async applyCart(cart: CartSnapshot): Promise<void> {
+    if (!cart.items.length || !cart.guestCheckoutAllowed) {
+      this.model = cart
+      return
+    }
+
+    this.model = { ...cart, estimate: await this.service.estimateCheckout(defaultEstimateRequest()) }
+  }
 }
 
 
 function createCheckoutKey(): string {
   return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function defaultEstimateRequest(): CheckoutEstimateRequest {
+  return { shippingAddress: { country: 'US', state: 'UT', postalCode: '' } }
 }

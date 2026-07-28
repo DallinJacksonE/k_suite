@@ -44,6 +44,8 @@ test('shop presenter loads batches, filters, load more, and gates guest pattern 
   const presenter = new ShopPresenter({
     listShopProducts: async (request) => { requests.push(request); return { products: request.afterId ? [pattern] : [plushie], nextCursor: request.afterId ? undefined : 'plushie-1', hasMore: !request.afterId, appliedFilters: request.filters ?? { type: 'all' } } },
     getShopFilterOptions: async () => ({ colors: ['blue'], sizes: ['medium'] }),
+    listPurchasedPatterns: async () => [],
+    createPurchasedPatternDownload: async (productId) => ({ productId, orderId: 'order-1', title: 'Bear Pattern', purchasedAt: 'now', downloadUrl: '/pattern.pdf' }),
     addCartItem: async (input) => { addCalls.push(input); return { cart: [input] } },
   }, { status: 'guest' }, { productType: 'plushie' })
 
@@ -63,6 +65,27 @@ test('shop presenter loads batches, filters, load more, and gates guest pattern 
   assert.deepEqual(requests.at(-1), { filters: { type: 'plushie', saleOnly: true }, batchSize: 20, sort: 'price', direction: 'asc' })
   assert.equal(addCalls.length, 0)
   assert.match(updates.at(-1)?.notice ?? '', /log in/i)
+})
+
+test('shop presenter creates an access link for already purchased patterns', async () => {
+  const updates: ShopViewModel[] = []
+  const downloadCalls: string[] = []
+  const presenter = new ShopPresenter({
+    listShopProducts: async (request) => ({ products: [pattern], hasMore: false, appliedFilters: request.filters ?? { type: 'pattern' } }),
+    getShopFilterOptions: async () => ({ colors: [], sizes: [] }),
+    listPurchasedPatterns: async () => [{ productId: 'pattern-1', orderId: 'order-1', title: 'Bear Pattern', purchasedAt: 'now' }],
+    createPurchasedPatternDownload: async (productId) => { downloadCalls.push(productId); return { productId, orderId: 'order-1', title: 'Bear Pattern', purchasedAt: 'now', downloadUrl: '/pattern.pdf' } },
+    addCartItem: async (input) => ({ cart: [input] }),
+  }, { status: 'authenticated', user: { email: 'ada@example.com', name: 'Ada', cart: [], pdfKeys: [] } }, { productType: 'pattern' })
+
+  presenter.attach({ setShop: (model) => updates.push(model), setBusy: () => {}, setError: () => {} })
+  await presenter.loadInitial()
+  const download = await presenter.createPatternAccessLink('pattern-1')
+
+  assert.deepEqual(updates[0].purchasedPatternProductIds, ['pattern-1'])
+  assert.deepEqual(downloadCalls, ['pattern-1'])
+  assert.equal(download?.downloadUrl, '/pattern.pdf')
+  assert.match(updates.at(-1)?.notice ?? '', /opening/i)
 })
 
 test('shop components are importable React boundaries', () => {

@@ -33,7 +33,9 @@ test('cart presenter loads cart, updates quantities, and estimates checkout tota
   await presenter.estimate({ shippingAddress: { country: 'US', state: 'CA', postalCode: '90210' } })
 
   assert.equal((models[0] as CartSnapshot).subtotal, 4000)
+  assert.equal((models[0] as { estimate: CheckoutEstimateResponse }).estimate.grandTotal, 5130)
   assert.equal((models[1] as CartSnapshot).subtotal, 6000)
+  assert.equal((models[1] as { estimate: CheckoutEstimateResponse }).estimate.grandTotal, 5130)
   assert.equal((models[2] as { estimate: CheckoutEstimateResponse }).estimate.grandTotal, 5130)
 })
 
@@ -57,7 +59,7 @@ test('cart presenter submits test checkout and reloads the cart', async () => {
 
 test('cart components are importable React boundaries', () => {
   assert.equal(createElement(CartItemRow, { item: cart.items[0], onQuantityChange: async () => {}, onRemove: async () => {} }).type, CartItemRow)
-  assert.equal(createElement(CartSummary, { cart, estimate, onEstimate: async () => {}, onCheckout: async () => {} }).type, CartSummary)
+  assert.equal(createElement(CartSummary, { cart, estimate, onCheckout: async () => {} }).type, CartSummary)
 })
 
 test('client API service reads cart, patches items, and estimates checkout', async () => {

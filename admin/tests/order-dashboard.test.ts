@@ -16,9 +16,20 @@ test('paid plushie orders appear in fulfillment queue with ordered item details'
   assert.match(text, /Qty 2/)
   assert.match(text, /medium/)
   assert.match(text, /red/)
+  assert.match(text, /Shipping label is accurate/)
+  assert.match(text, /Color and size are correct and Notes were considered/)
+  assert.match(text, /Ship to Ada, 1 Main/)
   assert.match(text, /Mark shipped/)
   assert.match(text, /\$1,810\.00/)
   assert.match(text, /\$1,800\.00/)
+})
+
+test('pattern-only paid orders stay out of the shipping queue', () => {
+  const text = renderText(createElement(OrdersDashboard, { orders: [patternOrder()], busy: false, onRefresh: () => {}, onMarkShipped: () => {} }))
+
+  assert.match(text, /Pending0/)
+  assert.match(text, /History1/)
+  assert.doesNotMatch(text, /Shipping label is accurate/)
 })
 
 function plushieOrder(): OrderRecord {
@@ -35,6 +46,23 @@ function plushieOrder(): OrderRecord {
       ],
       totals: { subtotal: 1800, discountTotal: 0, shipping: 10, tax: 0, grandTotal: 1810 },
       shippingAddress: { name: 'Ada', line1: '1 Main', city: 'Los Angeles', region: 'CA', postalCode: '90210', country: 'US' },
+    },
+  }
+}
+
+function patternOrder(): OrderRecord {
+  return {
+    orderId: 'pattern-order',
+    productId: 'pattern-1',
+    clientEmail: 'ada@example.com',
+    chargedAmount: 500,
+    status: 'paid',
+    clientInstructions: '',
+    details: {
+      lineItems: [
+        { productId: 'pattern-1', productType: 'pattern', title: 'Pattern PDF', quantity: 1, lineTotal: 500 },
+      ],
+      totals: { subtotal: 500, discountTotal: 0, shipping: 0, tax: 0, grandTotal: 500 },
     },
   }
 }

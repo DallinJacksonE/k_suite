@@ -300,6 +300,63 @@ button:disabled {
   padding-top: 8px;
 }
 
+.shipping-confirmation-modal {
+  width: min(720px, calc(100vw - 32px));
+  padding: 0;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.shipping-confirmation-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.shipping-confirmation-card {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.shipping-confirmation-card section,
+.shipping-plushie-list {
+  display: grid;
+  gap: 10px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shipping-confirmation-card h3,
+.shipping-confirmation-card h4,
+.shipping-confirmation-card p {
+  margin: 0;
+}
+
+.shipping-confirmation-card address {
+  font-style: normal;
+}
+
+.shipping-plushie-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shipping-plushie-list li {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(4, auto);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
 .color-variation-stack {
   display: grid;
   gap: 12px;
@@ -358,6 +415,7 @@ button:disabled {
   .product-listing-summary,
   .order-listing-header,
   .order-line-item-list li,
+  .shipping-plushie-list li,
   .color-variation-row,
   .user-order-row {
     grid-template-columns: 1fr;

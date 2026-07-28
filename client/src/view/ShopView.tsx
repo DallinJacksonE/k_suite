@@ -15,6 +15,7 @@ const emptyShop: ShopViewModel = {
   direction: 'desc',
   hasMore: false,
   selectedProduct: null,
+  purchasedPatternProductIds: [],
   availableColors: [],
   availableSizes: [],
 }
@@ -47,6 +48,11 @@ export function ShopView({ productType = 'all', title = 'Browse plushies and pat
     await presenter.addSelectedToCart(input)
   }
 
+  const openPatternAccess = async (productId: string) => {
+    const download = await presenter.createPatternAccessLink(productId)
+    if (download?.downloadUrl) window.open(download.downloadUrl, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <ClientShell>
       <section className="page-card">
@@ -68,7 +74,15 @@ export function ShopView({ productType = 'all', title = 'Browse plushies and pat
       </section>
 
       <section className="shop-grid" aria-label="Products">
-        {shop.products.map((product) => <ProductCard key={product.id} product={product} onSelect={(selected) => presenter.selectProduct(selected)} />)}
+        {shop.products.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            isPurchasedPattern={product.type === 'pattern' && shop.purchasedPatternProductIds.includes(product.id)}
+            onSelect={(selected) => presenter.selectProduct(selected)}
+            onAccessPattern={(productId) => void openPatternAccess(productId)}
+          />
+        ))}
       </section>
 
       {shop.products.length === 0 && !busy ? <p>No products match these filters.</p> : null}
