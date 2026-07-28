@@ -13,6 +13,7 @@ const emptyHome: HomeViewModel = {
 const patternExploreImage = '/images/rustyfox.jpg'
 const plushieExploreImage = '/images/poohbear.JPG'
 const blogExploreImage = '/images/chick.JPG'
+const blanketBanner = '/images/bannerforwebsite.png'
 
 interface ExploreLink {
   imageUrl: string
@@ -40,7 +41,7 @@ export function HomeView() {
 
   return (
     <ClientShell>
-      <section className="home-hero page-card">
+      <section className="home-hero page-card" style={{ backgroundImage: `url(${blanketBanner})` }}>
         <h1>Kaylie's Creations</h1>
         <div className="home-hero__actions">
         </div>

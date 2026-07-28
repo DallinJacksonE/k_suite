@@ -1,20 +1,24 @@
 .home-hero {
   gap: var(--space-7);
+  min-height: 12rem;
+  place-items: center;
+  background-position: center;
+  background-size: cover;
   text-align: center;
-
 }
 
 .home-hero h1 {
+  width: 100%;
+  margin: 0;
+  border-radius: var(--radius-md);
+  padding: 0.25em 0.45em;
   font-size: clamp(2.4rem, 7vw, 5.8rem);
   line-height: 0.95;
   letter-spacing: -0.08em;
-  
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(2px);
 }
 
-.home-hero p:not(.eyebrow) {
-  width: 100%;
-  font-size: 1.1rem;
-}
 
 .home-hero__actions {
   display: flex;
