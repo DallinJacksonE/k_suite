@@ -10,6 +10,7 @@ import type {
   CartSnapshot,
   CheckoutEstimateRequest,
   CheckoutEstimateResponse,
+  CheckoutPublicConfig,
   CheckoutRequest,
   CheckoutResult,
   CsrfTokenResponse,
@@ -57,6 +58,7 @@ export interface ClientApiService {
   updateCartItem(itemId: string, input: UpdateCartItemInput): Promise<CartSnapshot>
   removeCartItem(productType: CartItemInput['productType'], itemId: string): Promise<CartSnapshot>
   estimateCheckout(input: CheckoutEstimateRequest): Promise<CheckoutEstimateResponse>
+  getCheckoutConfig(): Promise<CheckoutPublicConfig>
   checkout(input: CheckoutRequest): Promise<CheckoutResult>
 }
 
@@ -175,6 +177,9 @@ export class FetchClientApiService implements ClientApiService {
     })
   }
 
+  async getCheckoutConfig(): Promise<CheckoutPublicConfig> {
+    return this.request<CheckoutPublicConfig>('/shop/checkout/config')
+  }
 
   async checkout(input: CheckoutRequest): Promise<CheckoutResult> {
     return this.mutatingRequest<CheckoutResult>('/shop/checkout', input)

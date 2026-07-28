@@ -25,11 +25,14 @@ const fakeService: ClientApiService = {
   listBlogArticles: async () => [],
   listBlogCollections: async () => [],
   listShopProducts: async () => ({ products: [], hasMore: false, appliedFilters: { type: 'all' } }),
+  getShopFilterOptions: async () => ({ colors: [], sizes: [] }),
   addCartItem: async () => ({ cart: [] }),
   getCart: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
   updateCartItem: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
   removeCartItem: async () => ({ items: [], subtotal: 0, containsPatterns: false, guestCheckoutAllowed: true }),
   estimateCheckout: async () => ({ subtotal: 0, shipping: 0, tax: 0, discount: 0, grandTotal: 0, currency: 'USD' }),
+  getCheckoutConfig: async () => ({ provider: 'test' }),
+  checkout: async () => ({ orderId: 'order-1', status: 'pending', totals: { subtotal: 0, discountTotal: 0, shipping: 0, tax: 0, grandTotal: 0 }, purchasedPatternDownloadsAvailable: false }),
 }
 
 test('client session provider exports a typed provider and hook', () => {

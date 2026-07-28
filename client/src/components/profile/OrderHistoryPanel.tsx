@@ -21,4 +21,4 @@ function OrderItems({ order }: { order: OrderRecord }) {
 }
 function readLineItems(order: OrderRecord): OrderLineItem[] { const items = order.details.lineItems; return Array.isArray(items) ? items.filter(isOrderLineItem) : [] }
 function isOrderLineItem(value: unknown): value is OrderLineItem { return !!value && typeof value === 'object' && typeof (value as { title?: unknown }).title === 'string' }
-function formatPrice(cents: number): string { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100) }
+function formatPrice(value: number): string { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value) }

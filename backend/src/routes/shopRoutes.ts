@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import type { CartItemInput, CheckoutEstimateRequest, CheckoutRequest, MariaDbAccess, ProductSize, ProductSortDirection, ProductSortKey, ProductType, ShopProductTypeFilter, UpdateCartItemInput } from '@k_suite/shared';
-import { createMariaDbAccess } from '../db/mariadb_access.js';
+import type { CartItemInput, CheckoutEstimateRequest, CheckoutRequest, MariaDbAccess, ProductSortDirection, ProductSortKey, ProductType, ShopProductTypeFilter, UpdateCartItemInput } from '@k_suite/shared';
+import { createMariaDbAccess, getCheckoutPublicConfig } from '../db/mariadb_access.js';
 import { readCookie, setClientCookie, setSessionCookie } from './cookieHelpers.js';
 import { requireCsrfToken } from './csrfHelpers.js';
 
@@ -36,6 +36,9 @@ export function createShopRouter(deps: ShopRouterDeps = {}): Router {
   router.post('/checkout/estimate', asyncHandler(async (req, res) => {
     res.json(await access.estimateCheckout(req.body as CheckoutEstimateRequest, readCartCookies(req)));
   }));
+  router.get('/checkout/config', (_req, res) => {
+    res.json(getCheckoutPublicConfig());
+  });
   router.post('/checkout', asyncHandler(async (req, res) => {
     requireCsrfToken(req);
     res.status(201).json(await access.checkout(req.body as CheckoutRequest, readCartCookies(req)));
@@ -108,7 +111,7 @@ function readProductBatchRequest(req: Request) {
       type: readProductTypeFilter(req) ?? 'all',
       saleOnly: readOptionalBoolean(req, 'saleOnly'),
       color: readOptionalString(req, 'color'),
-      size: readProductSize(req),
+      size: readProductSizeFilter(req),
     },
     batchSize: readOptionalNumber(req, 'batchSize'),
     afterId: readOptionalString(req, 'afterId'),
@@ -124,10 +127,11 @@ function readProductTypeFilter(req: Request): ShopProductTypeFilter | undefined 
   throw new Error('type must be plushie, pattern, or all.');
 }
 
-function readProductSize(req: Request): ProductSize | undefined {
+function readProductSizeFilter(req: Request): string | undefined {
   const value = readOptionalString(req, 'size');
   if (value === undefined) return undefined;
-  if (['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value)) return value as ProductSize;
+  const sizes = value.split(',').map((size) => size.trim()).filter(Boolean);
+  if (sizes.length && sizes.every((size) => ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(size))) return sizes.join(',');
   throw new Error('size is invalid.');
 }
 

@@ -69,6 +69,7 @@ test('client API service reads cart, patches items, and estimates checkout', asy
     if (String(input).includes('/shop/cart/items/')) return jsonResponse(cart)
     if (String(input).endsWith('/shop/plushies')) return jsonResponse({ cart: [] })
     if (String(input).endsWith('/shop/checkout/estimate')) return jsonResponse(estimate)
+    if (String(input).endsWith('/shop/checkout/config')) return jsonResponse({ provider: 'test' })
     if (String(input).endsWith('/shop/checkout')) return jsonResponse(checkoutResult)
     throw new Error(`unexpected request ${String(input)}`)
   }
@@ -78,6 +79,7 @@ test('client API service reads cart, patches items, and estimates checkout', asy
   await service.updateCartItem('p1:red:medium', { quantity: 3 })
   await service.removeCartItem('plushie', 'p1:red:medium')
   await service.estimateCheckout({ shippingAddress: { country: 'US', state: 'CA' } })
+  await service.getCheckoutConfig()
   await service.checkout({ idempotencyKey: 'key-1', contact: { email: 'ada@example.com', name: 'Ada' }, shippingAddress: { name: 'Ada', line1: '1 Main', city: 'Los Angeles', region: 'CA', postalCode: '90210', country: 'US' }, billingAddress: { name: 'Ada', line1: '1 Main', city: 'Los Angeles', region: 'CA', postalCode: '90210', country: 'US', sameAsShipping: true }, paymentStatus: 'paid' })
 
   assert.equal(calls[0].url, '/api/shop/cart')
@@ -85,8 +87,9 @@ test('client API service reads cart, patches items, and estimates checkout', asy
   assert.equal(new Headers(calls[2].init.headers).get('x-csrf-token'), 'csrf-1')
   assert.equal(calls[4].init.method, 'DELETE')
   assert.equal(calls[6].url, '/api/shop/checkout/estimate')
-  assert.equal(calls[8].url, '/api/shop/checkout')
-  assert.equal(calls[8].init.method, 'POST')
+  assert.equal(calls[7].url, '/api/shop/checkout/config')
+  assert.equal(calls[9].url, '/api/shop/checkout')
+  assert.equal(calls[9].init.method, 'POST')
 })
 
 function jsonResponse(body: unknown): Response {

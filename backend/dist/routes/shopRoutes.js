@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createMariaDbAccess } from '../db/mariadb_access.js';
+import { createMariaDbAccess, getCheckoutPublicConfig } from '../db/mariadb_access.js';
 import { readCookie, setClientCookie, setSessionCookie } from './cookieHelpers.js';
 import { requireCsrfToken } from './csrfHelpers.js';
 export function createShopRouter(deps = {}) {
@@ -29,6 +29,9 @@ export function createShopRouter(deps = {}) {
     router.post('/checkout/estimate', asyncHandler(async (req, res) => {
         res.json(await access.estimateCheckout(req.body, readCartCookies(req)));
     }));
+    router.get('/checkout/config', (_req, res) => {
+        res.json(getCheckoutPublicConfig());
+    });
     router.post('/checkout', asyncHandler(async (req, res) => {
         requireCsrfToken(req);
         res.status(201).json(await access.checkout(req.body, readCartCookies(req)));
@@ -97,7 +100,7 @@ function readProductBatchRequest(req) {
             type: readProductTypeFilter(req) ?? 'all',
             saleOnly: readOptionalBoolean(req, 'saleOnly'),
             color: readOptionalString(req, 'color'),
-            size: readProductSize(req),
+            size: readProductSizeFilter(req),
         },
         batchSize: readOptionalNumber(req, 'batchSize'),
         afterId: readOptionalString(req, 'afterId'),
@@ -113,12 +116,13 @@ function readProductTypeFilter(req) {
         return value;
     throw new Error('type must be plushie, pattern, or all.');
 }
-function readProductSize(req) {
+function readProductSizeFilter(req) {
     const value = readOptionalString(req, 'size');
     if (value === undefined)
         return undefined;
-    if (['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value))
-        return value;
+    const sizes = value.split(',').map((size) => size.trim()).filter(Boolean);
+    if (sizes.length && sizes.every((size) => ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(size)))
+        return sizes.join(',');
     throw new Error('size is invalid.');
 }
 function readProductSortKey(req) {

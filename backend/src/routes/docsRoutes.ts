@@ -64,8 +64,8 @@ const shopProductQueryFields: ApiFieldDoc[] = [
   { name: 'sort', type: "'createdAt' | 'price' | 'title'", location: 'query', required: false, description: 'Sort key.' },
   { name: 'direction', type: "'asc' | 'desc'", location: 'query', required: false, description: 'Sort direction.' },
   { name: 'saleOnly', type: 'boolean', location: 'query', required: false, description: 'Only return sale items.' },
-  { name: 'color', type: 'string', location: 'query', required: false, description: 'Plushie color filter.' },
-  { name: 'size', type: 'ProductSize', location: 'query', required: false, description: 'Product size filter.' },
+  { name: 'color', type: 'string', location: 'query', required: false, description: 'Comma-separated plushie color filter. Multiple selected colors match as a union.' },
+  { name: 'size', type: 'string', location: 'query', required: false, description: 'Comma-separated ProductSize filter. Multiple selected sizes match as a union.' },
 ];
 
 export const apiDocs: ApiDocsResponse = {
@@ -506,9 +506,16 @@ export const apiDocs: ApiDocsResponse = {
       responses: [{ status: 200, description: 'Checkout estimate returned.', body: 'CheckoutEstimateResponse' }],
     },
     {
+      method: 'GET',
+      path: '/api/shop/checkout/config',
+      summary: 'Return public checkout payment settings such as Square application and location ids.',
+      auth: 'None.',
+      responses: [{ status: 200, description: 'Public checkout configuration returned.', body: "{ provider: 'square' | 'test'; square?: { applicationId: string; locationId: string; environment: string } }" }],
+    },
+    {
       method: 'POST',
       path: '/api/shop/checkout',
-      summary: 'Create an order from the current cart. Current test-mode checkout marks payment paid; production Square capture will plug in here later.',
+      summary: 'Create an order from the current cart and capture payment through the configured checkout provider.',
       auth: 'Optional session_cookie or client_cookie with CSRF token; patterns require client_cookie.',
       contentType: 'application/json',
       responses: [{ status: 201, description: 'Checkout order created or idempotent result returned.', body: 'CheckoutResult' }],

@@ -19,8 +19,8 @@ export function CartSummary({ cart, estimate, onEstimate, onCheckout }: CartSumm
       </dl>
       {cart.subtotal >= 80 ? <p className="cartSummaryNotice">Free shipping applied for orders over $80.</p> : <p className="cartSummaryNotice">Free shipping starts at $80.</p>}
       {!cart.guestCheckoutAllowed ? <p className="shop-error">Log in to check out with pattern products.</p> : null}
-      <button className="cartSummarySecondaryButton" type="button" onClick={() => onEstimate({ shippingAddress: { country: 'US', state: 'CA', postalCode: '' } })}>Estimate shipping and tax</button>
-      <button className="cartSummaryCheckoutButton" type="button" disabled={!cart.items.length || !cart.guestCheckoutAllowed} onClick={() => void onCheckout()}>Checkout in test mode</button>
+      <button className="cartSummarySecondaryButton" type="button" onClick={() => onEstimate({ shippingAddress: { country: 'US', state: 'UT', postalCode: '' } })}>Estimate Utah shipping and tax</button>
+      <button className="cartSummaryCheckoutButton" type="button" disabled={!cart.items.length || !cart.guestCheckoutAllowed} onClick={() => void onCheckout()}>Checkout</button>
     </aside>
   )
 }

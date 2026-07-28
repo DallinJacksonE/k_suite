@@ -163,7 +163,7 @@ export interface ShopProductFilters {
   type?: ShopProductTypeFilter
   saleOnly?: boolean
   color?: string
-  size?: ProductSize
+  size?: string
   tags?: string[]
 }
 
@@ -263,6 +263,15 @@ export interface CheckoutEstimateResponse {
   discount: number
   grandTotal: number
   currency: 'USD'
+}
+
+export interface CheckoutPublicConfig {
+  provider: 'square' | 'test'
+  square?: {
+    applicationId: string
+    locationId: string
+    environment: 'production' | 'sandbox'
+  }
 }
 
 

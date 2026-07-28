@@ -159,7 +159,7 @@ test('checkout processes cart as paid in test mode, clears cart, and is idempote
   await service.insertProduct({ id: 'p1', type: 'plushie', title: 'Plushie', price: 1000, salePrice: 900, isSaleItem: true, readyToShip: true, description: 'Plushie', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], inventoryCount: 2 });
   await addCartItem({ productId: 'p1', quantity: 2, colorVariation: 'red', selectedSize: 'medium', clientInstructions: 'gift wrap' }, {}, service, { randomBytes: () => 'guest-1' });
 
-  const result = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-1', emailService: { send: async (message) => sentEmails.push(message) } });
+  const result = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-1', emailService: { send: async (message) => sentEmails.push(message) }, paymentProcessor: testPaymentProcessor() });
   const duplicate = await checkout(checkoutRequest(), { sessionCookie: 'guest-1' }, service, { randomUUID: () => 'order-2' });
 
   assert.equal(result.orderId, 'order-1');
@@ -183,7 +183,7 @@ test('checkout grants pattern downloads after test-mode payment succeeds', async
   await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 500, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
   await addCartItem({ productId: 'pattern-1', quantity: 1 }, { clientCookie: 'client-1' }, service);
 
-  const result = await checkout({ ...checkoutRequest(), idempotencyKey: 'pattern-key' }, { clientCookie: 'client-1' }, service, { randomUUID: () => 'pattern-order' });
+  const result = await checkout({ ...checkoutRequest(), idempotencyKey: 'pattern-key' }, { clientCookie: 'client-1' }, service, { randomUUID: () => 'pattern-order', paymentProcessor: testPaymentProcessor() });
 
   assert.equal(result.status, 'paid');
   assert.equal(result.purchasedPatternDownloadsAvailable, true);
@@ -333,6 +333,18 @@ test('listShopProducts applies filters before deterministic sorting and paginati
   assert.deepEqual(batch.appliedFilters, { type: 'all', saleOnly: true, color: 'red', size: 'medium' });
 });
 
+test('listShopProducts treats selected colors and sizes as a union', async () => {
+  const service = new FakeService();
+  await service.insertProduct({ id: 'red-medium', type: 'plushie', title: 'Red Medium Bear', price: 3000, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }], sizes: ['medium'] });
+  await service.insertProduct({ id: 'blue-small', type: 'plushie', title: 'Blue Small Bear', price: 1000, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'blue' }], sizes: ['small'] });
+  await service.insertProduct({ id: 'green-large', type: 'plushie', title: 'Green Large Bear', price: 2000, readyToShip: true, description: 'Bear', thumbnailImage: 'photo', colorVariations: [{ name: 'green' }], sizes: ['large'] });
+
+  const batch = await listShopProducts({ filters: { type: 'all', color: 'red', size: 'small' }, sort: 'price', direction: 'asc' }, service);
+
+  assert.deepEqual(batch.products.map((product) => product.id), ['blue-small', 'red-medium']);
+  assert.deepEqual(batch.appliedFilters, { type: 'all', color: 'red', size: 'small' });
+});
+
 test('available product filter options are cached and recalculate on product add', async () => {
   const service = new FakeService();
   await service.insertAdmin({ email: 'admin@example.com', name: 'Admin', passwordHash: 'hash', salt: 'salt' });
@@ -377,18 +389,18 @@ test('cart read and update return product snapshots, preserve variants, and refr
   assert.ok(service.guests.get('guest-1').expiresAt.getTime() >= beforeTouch);
 });
 
-test('checkout estimate blocks guest pattern checkout and applies free shipping threshold', async () => {
+test('checkout estimate blocks guest pattern checkout and applies Utah tax plus $10 shipping under $80', async () => {
   const service = new FakeService();
-  await service.insertProduct({ id: 'big', type: 'plushie', title: 'Big Plushie', price: 9000, readyToShip: true, description: 'Big', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }] });
+  await service.insertProduct({ id: 'small', type: 'plushie', title: 'Small Plushie', price: 40, readyToShip: true, description: 'Small', thumbnailImage: 'photo', colorVariations: [{ name: 'red' }] });
   await service.insertProduct({ id: 'pattern-1', type: 'pattern', title: 'Pattern', price: 1200, description: 'Pattern', thumbnailImage: 'thumb', pdfKey: 'pdfs/patterns/p.pdf' });
-  const guest = await addCartItem({ productId: 'big', quantity: 1 }, {}, service, { randomBytes: () => 'guest-1' });
+  const guest = await addCartItem({ productId: 'small', quantity: 1 }, {}, service, { randomBytes: () => 'guest-1' });
 
-  const estimate = await estimateCheckout({ shippingAddress: { country: 'US', state: 'CA', postalCode: '90210' } }, { sessionCookie: guest.cookie }, service);
+  const estimate = await estimateCheckout({ shippingAddress: { country: 'US', state: 'UT', postalCode: '84044' } }, { sessionCookie: guest.cookie }, service);
 
-  assert.equal(estimate.subtotal, 9000);
-  assert.equal(estimate.shipping, 0);
-  assert.equal(estimate.tax, 743);
-  assert.equal(estimate.grandTotal, 9743);
+  assert.equal(estimate.subtotal, 40);
+  assert.equal(estimate.shipping, 10);
+  assert.equal(estimate.tax, 2.9);
+  assert.equal(estimate.grandTotal, 52.9);
 
   await service.upsertGuestCart('guest-pattern', [{ productId: 'pattern-1', quantity: 1 }]);
   await assert.rejects(() => estimateCheckout({ shippingAddress: { country: 'US', state: 'CA', postalCode: '90210' } }, { sessionCookie: 'guest-pattern' }, service), /log in/i);
@@ -403,4 +415,8 @@ function checkoutRequest() {
     paymentStatus: 'pending',
     paymentToken: 'placeholder-token',
   };
+}
+
+function testPaymentProcessor() {
+  return { charge: async (input) => ({ provider: 'test', status: 'paid', transactionId: `test-${input.idempotencyKey}` }) };
 }

@@ -87,7 +87,7 @@ export interface ShopProductFilters {
   type?: ShopProductTypeFilter;
   saleOnly?: boolean;
   color?: string;
-  size?: ProductSize;
+  size?: string;
   tags?: string[];
 }
 

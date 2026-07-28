@@ -43,6 +43,7 @@ test('shop presenter loads batches, filters, load more, and gates guest pattern 
   const requests: unknown[] = []
   const presenter = new ShopPresenter({
     listShopProducts: async (request) => { requests.push(request); return { products: request.afterId ? [pattern] : [plushie], nextCursor: request.afterId ? undefined : 'plushie-1', hasMore: !request.afterId, appliedFilters: request.filters ?? { type: 'all' } } },
+    getShopFilterOptions: async () => ({ colors: ['blue'], sizes: ['medium'] }),
     addCartItem: async (input) => { addCalls.push(input); return { cart: [input] } },
   }, { status: 'guest' }, { productType: 'plushie' })
 
@@ -81,12 +82,14 @@ test('client API service calls filtered shop batch endpoint and cart mutation en
   }
   const service = new FetchClientApiService('/api', fetcher)
 
-  const batch = await service.listShopProducts({ filters: { type: 'all', saleOnly: true, color: 'blue' }, sort: 'price', direction: 'asc', batchSize: 20 })
+  const batch = await service.listShopProducts({ filters: { type: 'all', saleOnly: true, color: 'blue,red', size: 'small,medium' }, sort: 'price', direction: 'asc', batchSize: 20 })
   await service.addCartItem({ productId: 'plushie-1', productType: 'plushie', quantity: 1 })
 
   assert.equal(batch.products[0].id, 'plushie-1')
   assert.match(calls[0].url, /\/api\/shop\/products\?/) 
   assert.match(calls[0].url, /saleOnly=true/)
+  assert.match(calls[0].url, /color=blue%2Cred/)
+  assert.match(calls[0].url, /size=small%2Cmedium/)
   assert.equal(new Headers(calls[2].init.headers).get('x-csrf-token'), 'csrf-1')
 })
 

@@ -23,6 +23,6 @@ function renderOrderEmailText(event, order) {
         return `Order ${order.orderId} has been cancelled. If this looks wrong, please contact support.`;
     return `Order ${order.orderId} has been fulfilled.`;
 }
-function formatCurrency(cents) {
-    return `$${(cents / 100).toFixed(2)}`;
+function formatCurrency(value) {
+    return `$${value.toFixed(2)}`;
 }

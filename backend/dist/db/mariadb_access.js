@@ -1,14 +1,18 @@
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { DEFAULT_BLOG_COLLECTION_TAG, SESSION_TTL_MS } from '@k_suite/shared';
 import { createMariaDbService } from './mariadb_service.js';
-import { NoopEmailService } from '../email/EmailService.js';
+import { NoopEmailService, SmtpEmailService } from '../email/EmailService.js';
 import { createOrderEmailMessage } from '../email/OrderEmailTemplates.js';
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
+const FREE_SHIPPING_THRESHOLD = 80;
+const STANDARD_SHIPPING = 10;
+const UTAH_TAX_RATE = 0.0725;
 const defaultService = createMariaDbService();
 const productFilterOptionCaches = new WeakMap();
 export function createMariaDbAccess(service = defaultService, runtime = {}) {
@@ -274,6 +278,14 @@ export async function listAvailableProductColors(service = defaultService) {
 export async function listAvailableProductSizes(service = defaultService) {
     return getProductFilterOptionCache(service).listSizes();
 }
+export function getCheckoutPublicConfig(config = readBackendConfigSync()) {
+    if (!shouldUseSquare(config))
+        return { provider: 'test' };
+    const square = config.square ?? {};
+    if (!square.applicationId || !square.locationId)
+        return { provider: 'test' };
+    return { provider: 'square', square: { applicationId: square.applicationId, locationId: square.locationId, environment: square.environment ?? 'production' } };
+}
 export async function getCart(cookies, service = defaultService, runtime = {}) {
     const target = await getCartTarget(cookies, service, runtime);
     const cart = normalizeCart(target.cart);
@@ -313,8 +325,8 @@ export async function estimateCheckout(input, cookies, service = defaultService,
         throw new Error('Cart is empty.');
     if (!snapshot.guestCheckoutAllowed)
         throw new Error('Please log in to check out with patterns.');
-    const shipping = snapshot.subtotal >= 8_000 ? 0 : 800;
-    const tax = Math.round(snapshot.subtotal * taxRateFor(input.shippingAddress.state));
+    const shipping = shippingFor(snapshot.subtotal);
+    const tax = calculateTax(snapshot.subtotal, input.shippingAddress.state);
     return { subtotal: snapshot.subtotal, shipping, tax, discount: 0, grandTotal: snapshot.subtotal + shipping + tax, currency: 'USD' };
 }
 export async function checkout(input, cookies, service = defaultService, runtime = {}) {
@@ -335,8 +347,8 @@ export async function checkout(input, cookies, service = defaultService, runtime
     if (containsPatterns && target.cookieName !== 'client_cookie')
         throw new Error('Please log in to check out with patterns.');
     const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
-    const shipping = subtotal >= 8_000 ? 0 : 800;
-    const tax = Math.round(subtotal * taxRateFor(input.shippingAddress.region));
+    const shipping = shippingFor(subtotal);
+    const tax = calculateTax(subtotal, input.shippingAddress.region);
     const totals = { subtotal, discountTotal: 0, shipping, tax, grandTotal: subtotal + shipping + tax };
     const payment = await chargeCheckoutPayment({ idempotencyKey: input.idempotencyKey, amount: totals.grandTotal, currency: 'USD', paymentToken: input.paymentToken }, runtime);
     const order = await service.insertOrder({
@@ -402,13 +414,21 @@ export async function deleteMarketEvent(adminCookie, eventId, service = defaultS
 function matchesProductFilters(product, filters = {}) {
     if (filters.saleOnly && !product.isSaleItem)
         return false;
-    if (filters.size && !(product.sizes ?? []).includes(filters.size))
-        return false;
-    if (filters.color && (product.type !== 'plushie' || !product.colorVariations.some((variation) => readColorName(variation).toLowerCase() === filters.color?.toLowerCase())))
+    const colors = parseCsv(filters.color).map((color) => color.toLowerCase());
+    const sizes = parseCsv(filters.size);
+    if ((colors.length || sizes.length) && !matchesProductFacetUnion(product, colors, sizes))
         return false;
     if (filters.tags?.length && !filters.tags.every((tag) => product.tags?.includes(tag)))
         return false;
     return true;
+}
+function matchesProductFacetUnion(product, colors, sizes) {
+    const matchesColor = colors.length > 0 && product.type === 'plushie' && product.colorVariations.some((variation) => colors.includes(readColorName(variation).toLowerCase()));
+    const matchesSize = sizes.length > 0 && (product.sizes ?? []).some((size) => sizes.includes(size));
+    return matchesColor || matchesSize;
+}
+function parseCsv(value) {
+    return (value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 function getProductFilterOptionCache(service) {
     let cache = productFilterOptionCaches.get(service);
@@ -526,7 +546,10 @@ async function toOrderLineItem(item, service) { const product = await service.fi
     throw new Error('Product is out of stock.'); const unitPrice = effectivePrice(product); return { productId: item.productId, productType: product.type, title: product.title, quantity: item.quantity, unitPrice, salePrice: product.salePrice, selectedColor: item.selectedColor ?? item.colorVariation, selectedSize: item.selectedSize, clientInstructions: item.clientInstructions, lineTotal: unitPrice * item.quantity, pdfKey: product.type === 'pattern' ? product.pdfKey : undefined }; }
 function itemIdForCartItem(item) { return [item.productId, item.colorVariation ?? item.selectedColor ?? '', item.selectedSize ?? ''].join(':'); }
 function isProductSize(value) { return typeof value === 'string' && ['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(value); }
-function taxRateFor(state) { return state?.toUpperCase() === 'CA' ? 0.0825 : 0; }
+function shippingFor(subtotal) { return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING; }
+function calculateTax(subtotal, state) { return roundMoney(subtotal * taxRateFor(state)); }
+function taxRateFor(state) { return state?.trim().toUpperCase() === 'UT' ? UTAH_TAX_RATE : 0; }
+function roundMoney(value) { return Math.round(value * 100) / 100; }
 async function getCartTarget(cookies, service, runtime) { if (cookies.clientCookie) {
     const cookieRecord = await service.findCookie(cookies.clientCookie);
     if (cookieRecord?.kind === 'client' && !isExpired(cookieRecord.expiresAt, now(runtime))) {
@@ -542,10 +565,10 @@ async function sendOrderStatusEmail(order, runtime) { if (order.status === 'fulf
     await sendOrderEmail('order_fulfilled', order, runtime); if (order.status === 'shipped')
     await sendOrderEmail('order_shipped', order, runtime); if (order.status === 'cancelled')
     await sendOrderEmail('order_cancelled', order, runtime); }
-async function sendOrderEmail(event, order, runtime) { await (runtime.emailService ?? new NoopEmailService()).send(createOrderEmailMessage(event, order)); }
+async function sendOrderEmail(event, order, runtime) { await (runtime.emailService ?? createConfiguredEmailService()).send(createOrderEmailMessage(event, order)); }
 function toCheckoutResult(order) { const totals = (order.details.totals ?? {}); return { orderId: order.orderId, status: order.status, totals: { subtotal: Number(totals.subtotal ?? 0), discountTotal: Number(totals.discountTotal ?? 0), shipping: Number(totals.shipping ?? 0), tax: Number(totals.tax ?? 0), grandTotal: Number(totals.grandTotal ?? order.chargedAmount) }, purchasedPatternDownloadsAvailable: order.status === 'paid' || order.status === 'fulfilled' || order.status === 'shipped' }; }
 async function chargeCheckoutPayment(input, runtime) { return (runtime.paymentProcessor ?? createCheckoutPaymentProcessor()).charge(input); }
-function createCheckoutPaymentProcessor() { return process.env.CHECKOUT_PAYMENT_PROVIDER === 'square' ? new SquareCheckoutPaymentProcessor() : new TestCheckoutPaymentProcessor(); }
+function createCheckoutPaymentProcessor(config = readBackendConfigSync()) { return shouldUseSquare(config) ? new SquareCheckoutPaymentProcessor(readSquarePaymentConfig(config)) : new TestCheckoutPaymentProcessor(); }
 class TestCheckoutPaymentProcessor {
     async charge(input) { return { provider: 'test', status: 'paid', transactionId: `test-${input.idempotencyKey}` }; }
 }
@@ -554,9 +577,35 @@ export class SquareCheckoutPaymentProcessor {
     constructor(config = readSquarePaymentConfig()) {
         this.config = config;
     }
-    async charge() { throw new Error(`Square payment capture is not implemented yet for ${this.config.environment}. Configure SQUARE_APPLICATION_ID, SQUARE_LOCATION_ID, and SQUARE_ACCESS_TOKEN before enabling it.`); }
+    async charge(input) {
+        assertRequired(input.paymentToken ?? '', 'paymentToken');
+        assertRequired(this.config.accessToken ?? '', 'square.accessToken');
+        assertRequired(this.config.locationId ?? '', 'square.locationId');
+        const response = await fetch(`${squareApiBaseUrl(this.config.environment)}/v2/payments`, {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${this.config.accessToken}`,
+                'content-type': 'application/json',
+                'square-version': '2026-06-18',
+            },
+            body: JSON.stringify({
+                idempotency_key: input.idempotencyKey,
+                source_id: input.paymentToken,
+                location_id: this.config.locationId,
+                amount_money: { amount: Math.round(input.amount * 100), currency: input.currency },
+                autocomplete: true,
+            }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+            throw new Error(body.errors?.map((error) => error.detail).filter(Boolean).join('; ') || `Square payment failed with status ${response.status}.`);
+        return { provider: 'square', status: body.payment?.status === 'COMPLETED' ? 'paid' : 'failed', transactionId: body.payment?.id };
+    }
 }
-function readSquarePaymentConfig() { return { applicationId: process.env.SQUARE_APPLICATION_ID, locationId: process.env.SQUARE_LOCATION_ID, accessToken: process.env.SQUARE_ACCESS_TOKEN, environment: process.env.SQUARE_ENVIRONMENT ?? 'sandbox' }; }
+function readSquarePaymentConfig(config = readBackendConfigSync()) { return { environment: 'production', ...config.square }; }
+function shouldUseSquare(config) { return process.env.CHECKOUT_PAYMENT_PROVIDER === 'square' || !!config.square?.accessToken; }
+function squareApiBaseUrl(environment) { return environment === 'sandbox' ? 'https://connect.squareupsandbox.com' : 'https://connect.squareup.com'; }
+function createConfiguredEmailService(config = readBackendConfigSync()) { return config.email?.user && config.email.password ? new SmtpEmailService(config.email) : new NoopEmailService(); }
 async function grantPurchasedPatterns(order, service) { for (const item of orderLineItems(order)) {
     if (item.productType === 'pattern' && typeof item.productId === 'string' && typeof item.pdfKey === 'string' && item.pdfKey)
         await service.insertPurchasedPattern({ userEmail: order.clientEmail, productId: item.productId, orderId: order.orderId, pdfKey: item.pdfKey });
@@ -588,4 +637,6 @@ function roundCurrency(value) { return Math.round(value * 100) / 100; }
 function now(runtime = {}) { return runtime.now?.() ?? new Date(); }
 function expiresAt(runtime = {}) { return new Date(now(runtime).getTime() + SESSION_TTL_MS); }
 function isExpired(expiresAtValue, reference) { return new Date(expiresAtValue).getTime() <= reference.getTime(); }
-async function loadBackendConfig() { const configPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../config.json'); return JSON.parse(await readFile(configPath, 'utf8')); }
+async function loadBackendConfig() { return JSON.parse(await readFile(backendConfigPath(), 'utf8')); }
+function readBackendConfigSync() { return JSON.parse(readFileSync(backendConfigPath(), 'utf8')); }
+function backendConfigPath() { return resolve(dirname(fileURLToPath(import.meta.url)), '../../config.json'); }

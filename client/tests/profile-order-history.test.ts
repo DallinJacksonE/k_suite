@@ -18,6 +18,8 @@ test('profile order history shows purchased item details and order status', () =
   assert.match(text, /red/)
   assert.match(text, /medium/)
   assert.match(text, /gift wrap/)
+  assert.match(text, /\$1,810\.00/)
+  assert.match(text, /\$1,800\.00/)
 })
 
 function plushieOrder(): OrderRecord {
@@ -25,14 +27,14 @@ function plushieOrder(): OrderRecord {
     orderId: 'order-1',
     productId: 'p1',
     clientEmail: 'ada@example.com',
-    chargedAmount: 2600,
+    chargedAmount: 1810,
     status: 'paid',
     clientInstructions: 'gift wrap',
     details: {
       lineItems: [
         { productId: 'p1', productType: 'plushie', title: 'Custom Bear', quantity: 2, unitPrice: 900, selectedColor: 'red', selectedSize: 'medium', clientInstructions: 'gift wrap', lineTotal: 1800 },
       ],
-      totals: { subtotal: 1800, discountTotal: 0, shipping: 800, tax: 0, grandTotal: 2600 },
+      totals: { subtotal: 1800, discountTotal: 0, shipping: 10, tax: 0, grandTotal: 1810 },
     },
   }
 }

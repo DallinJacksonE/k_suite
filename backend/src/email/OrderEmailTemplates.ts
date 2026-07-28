@@ -25,6 +25,6 @@ function renderOrderEmailText(event: OrderEmailEvent, order: OrderRecord): strin
   return `Order ${order.orderId} has been fulfilled.`;
 }
 
-function formatCurrency(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(2)}`;
 }

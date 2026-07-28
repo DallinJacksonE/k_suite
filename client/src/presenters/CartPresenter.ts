@@ -65,21 +65,23 @@ export class CartPresenter {
   }
 
 
-  async checkout(input: Omit<CheckoutRequest, 'idempotencyKey' | 'paymentStatus' | 'paymentToken'>): Promise<void> {
-    await this.run(async () => {
-      const checkoutResult = await this.service.checkout({ ...input, idempotencyKey: createCheckoutKey(), paymentStatus: 'paid', paymentToken: 'test-checkout-token' })
+  async checkout(input: Omit<CheckoutRequest, 'idempotencyKey' | 'paymentStatus'>): Promise<boolean> {
+    return this.run(async () => {
+      const checkoutResult = await this.service.checkout({ ...input, idempotencyKey: createCheckoutKey(), paymentStatus: 'paid', paymentToken: input.paymentToken ?? 'test-checkout-token' })
       this.model = { ...await this.service.getCart(), checkoutResult }
       this.publish()
     })
   }
 
-  private async run(action: () => Promise<void>): Promise<void> {
+  private async run(action: () => Promise<void>): Promise<boolean> {
     this.view?.setBusy(true)
     this.view?.setError(null)
     try {
       await action()
+      return true
     } catch (error) {
       this.view?.setError(error instanceof Error ? error.message : 'Cart action failed.')
+      return false
     } finally {
       this.view?.setBusy(false)
     }

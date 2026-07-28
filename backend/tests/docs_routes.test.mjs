@@ -74,6 +74,7 @@ test('docs route lists every mounted backend endpoint', async () => {
       'GET /api/shop/cart',
       'PATCH /api/shop/cart/items/:itemId',
       'POST /api/shop/checkout/estimate',
+      'GET /api/shop/checkout/config',
       'POST /api/shop/checkout',
       'GET /api/user/auth',
       'POST /api/user/auth',

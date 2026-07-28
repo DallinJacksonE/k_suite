@@ -8,7 +8,6 @@ import { ShopPresenter, type ShopPresenterView } from '../presenters/ShopPresent
 import { FetchClientApiService } from '../service/ClientApiService'
 import type { CartItemInput, ProductSortDirection, ProductSortKey, ProductType, ShopProductFilters, ShopViewModel } from '../service/ClientTypes'
 
-// Updated to include the new availableColors and availableSizes fallback arrays
 const emptyShop: ShopViewModel = {
   products: [],
   filters: { type: 'all' },
@@ -59,7 +58,6 @@ export function ShopView({ productType = 'all', title = 'Browse plushies and pat
       </section>
 
       <section className="page-card">
-        {/* Pass the globally fetched filters straight from the backend */}
         <ShopFilters
           filters={shop.filters}
           fixedType={productType === 'all' ? undefined : productType}

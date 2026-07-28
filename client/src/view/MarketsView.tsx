@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ClientShell } from '../components/layout/ClientShell'
 import { MarketCalendar } from '../components/markets/MarketCalendar'
-import { NextMarketCard } from '../components/markets/NextMarketCard'
 import { MarketsPresenter, type MarketsViewModel } from '../presenters/MarketsPresenter'
 import { FetchClientApiService } from '../service/ClientApiService'
 
@@ -19,7 +18,6 @@ export function MarketsView() {
         {model.loading ? <p>Loading markets…</p> : null}
         {model.error ? <p role="alert" className="form-error">{model.error}</p> : null}
         <div className="profile-grid">
-          <NextMarketCard event={model.nextEvent} />
           <MarketCalendar events={model.events} />
         </div>
       </section>
