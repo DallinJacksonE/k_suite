@@ -10,20 +10,26 @@ const emptyHome: HomeViewModel = {
   nextMarket: null,
 }
 
-interface exploreLinks {
-  imageURL: string;
-  link: string;
-  text: string;
+const patternExploreImage = '/images/rustyfox.jpg'
+const plushieExploreImage = '/images/poohbear.JPG'
+const blogExploreImage = '/images/chick.JPG'
+
+interface ExploreLink {
+  imageUrl: string
+  imageAlt: string
+  link: string
+  text: string
 }
+
+const exploreCards: ExploreLink[] = [
+  { imageUrl: patternExploreImage, imageAlt: 'Rust-colored crochet fox plushie', link: '/patterns', text: 'Patterns' },
+  { imageUrl: plushieExploreImage, imageAlt: 'Crochet Pooh bear plushie', link: '/plushies', text: 'Plushies' },
+  { imageUrl: blogExploreImage, imageAlt: 'Crochet chick plushie', link: '/blog', text: 'Blog' },
+]
 
 export function HomeView() {
   const presenter = useMemo(() => new HomePresenter(new FetchClientApiService()), [])
   const [home, setHome] = useState<HomeViewModel>(emptyHome)
-  const exploreCard: exploreLinks[] = [
-    { imageURL: "imageURL", link: "/patterns", text: "Patterns" },
-    { imageURL: "imageURL", link: "/plushies", text: "Plushies" },
-    { imageURL: "imageURL", link: "/blog", text: "Blog" }
-  ]
 
   useEffect(() => {
     const view: HomePresenterView = { setHome }
@@ -43,10 +49,10 @@ export function HomeView() {
       <section className="page-card" aria-labelledby="featured-heading">
         <p className="eyebrow">Explore the Community</p>
         <div className="featured-grid">
-          {exploreCard.map((card) => (
+          {exploreCards.map((card) => (
             <article className="featured-card" key={card.text}>
-              <img src={card.imageURL} alt="featured" />
-              <Link className="cta-link" to={card.link}>{card.text}</Link>
+              <img src={card.imageUrl} alt={card.imageAlt} />
+              <Link className="cta-link" to={card.link}>{card.text} {"->"}</Link>
             </article>
           ))}
         </div>

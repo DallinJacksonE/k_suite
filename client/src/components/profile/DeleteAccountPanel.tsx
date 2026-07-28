@@ -15,7 +15,7 @@ export function DeleteAccountPanel({ email, deleting, confirmation, onConfirmati
       <h2>Delete account</h2>
       <p>Type your email address to confirm. Historical order snapshots may be retained for business records.</p>
       <label>Confirm email: <input value={confirmation} onChange={change} /></label>
-      <button type="button" className="danger-button" disabled={deleting || confirmation !== email} onClick={onDelete}>{deleting ? 'Deleting…' : 'Delete account'}</button>
+      <button type="button" className="profile-action-button danger-button" disabled={deleting || confirmation !== email} onClick={onDelete}>{deleting ? 'Deleting…' : 'Delete account'}</button>
     </section>
   )
 }

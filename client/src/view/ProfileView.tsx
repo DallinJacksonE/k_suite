@@ -42,10 +42,12 @@ export function ProfileView() {
         {user && profile ? (
           <div className="profile-grid">
             <ProfileInfoForm user={user} saving={model.saving} onSave={(input) => void presenter.save({ email: user.email, ...input })} />
-            <AddressForm addressBook={user.addressBook} />
+            <div className="profile-card-stack">
+              <AddressForm addressBook={user.addressBook} />
+              <PurchasedPatternsPanel patterns={profile.purchasedPatterns} onDownload={(productId) => void openDownload(productId, presenter)} />
+              <DeleteAccountPanel email={user.email} deleting={model.deleting} confirmation={confirmation} onConfirmationChange={setConfirmation} onDelete={() => void presenter.deleteAccount(user.email, confirmation)} />
+            </div>
             <OrderHistoryPanel orders={profile.orders} />
-            <PurchasedPatternsPanel patterns={profile.purchasedPatterns} onDownload={(productId) => void openDownload(productId, presenter)} />
-            <DeleteAccountPanel email={user.email} deleting={model.deleting} confirmation={confirmation} onConfirmationChange={setConfirmation} onDelete={() => void presenter.deleteAccount(user.email, confirmation)} />
           </div>
         ) : null}
       </section>

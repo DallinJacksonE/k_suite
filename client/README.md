@@ -1,75 +1,52 @@
-# React + TypeScript + Vite
+# Kaylie's Creations client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## What it is
 
-Currently, two official plugins are available:
+The client app is the customer-facing storefront for Kaylie's Creations. It is a React/Vite TypeScript frontend with MVP-style presenter and service boundaries. It renders shop categories, product cards, cart/checkout flows, profiles, purchased pattern downloads, public blog content, and market information.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+In production the built Vite app is served by `client/server.js`, an Express process that also proxies relative `/api` and `/ws` requests to the backend over the Docker network. Product images and purchased pattern PDF download links returned by the backend point at `https://storage.kayliescreations.com`, so the browser downloads assets directly from storage rather than through the backend proxy.
 
-## React Compiler
+## How to set up for development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Build the shared package first, then install and run the client:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+cd ../shared && npm ci && npm run build
+cd ../client && npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The Vite dev server proxies `/api` and `/ws` to `http://localhost:7500` by default. Override with either:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+VITE_BACKEND_URL=http://localhost:7500 npm run dev
+# or
+BACKEND_URL=http://localhost:7500 npm run dev
 ```
+
+Useful checks:
+
+```sh
+npm test
+npm run build
+npm run lint
+```
+
+## How to deploy
+
+The Docker image builds the Vite app, copies `dist/`, and runs:
+
+```sh
+npm start
+```
+
+Compose sets:
+
+```sh
+PORT=7080
+BACKEND_URL=http://backend:7500
+```
+
+The service publishes host port `7080` and joins the `kaylies_creations` Docker network. Keep frontend API calls relative (`/api/...`) so the Express proxy can route them to the backend service name. Do not proxy MinIO file bytes through this service; the backend returns storage URLs under `https://storage.kayliescreations.com` for images and presigned pattern PDF downloads.
+
+Secrets needed directly by the client container: none. Runtime secrets are held by the backend. The client only needs the backend proxy target and any non-secret Vite build-time public values deliberately added in the future.

@@ -2,6 +2,8 @@ import { Client } from 'minio';
 import { randomUUID } from 'node:crypto';
 import type { PatternPdfUploadResult, ProductPhotoUploadResult } from '@k_suite/shared';
 
+const DEFAULT_PUBLIC_ENDPOINT = 'https://storage.kayliescreations.com';
+
 export type PhotoCategory = 'product' | 'blog';
 
 export interface BucketUpload {
@@ -27,7 +29,7 @@ export class MinIoBucketService {
 
   constructor(private readonly config: BucketServiceConfig) {
     this.client = createClient(config, config.endpoint);
-    this.signingClient = createClient(config, config.publicEndpoint ?? 'http://localhost:9000');
+    this.signingClient = createClient(config, config.publicEndpoint ?? DEFAULT_PUBLIC_ENDPOINT);
   }
 
   async uploadPhoto(category: PhotoCategory, upload: BucketUpload): Promise<ProductPhotoUploadResult> {
@@ -56,7 +58,7 @@ export class MinIoBucketService {
   }
 
   public publicUrl(key: string): string {
-    const endpoint = this.config.publicEndpoint ?? 'http://localhost:9000';
+    const endpoint = this.config.publicEndpoint ?? DEFAULT_PUBLIC_ENDPOINT;
     return `${endpoint.replace(/\/$/, '')}/${this.config.publicBucket}/${key}`;
   }
 }
@@ -64,7 +66,7 @@ export class MinIoBucketService {
 export function createMinIoBucketService(env: NodeJS.ProcessEnv = process.env): MinIoBucketService {
   return new MinIoBucketService({
     endpoint: env.MINIO_ENDPOINT ?? 'http://bucket:9000',
-    publicEndpoint: env.MINIO_PUBLIC_ENDPOINT ?? 'http://localhost:9000',
+    publicEndpoint: env.MINIO_PUBLIC_ENDPOINT ?? DEFAULT_PUBLIC_ENDPOINT,
     accessKey: env.MINIO_ACCESS_KEY ?? 'k_suite_minio',
     secretKey: env.MINIO_SECRET_KEY ?? 'k_suite_minio_password',
     publicBucket: env.MINIO_PUBLIC_BUCKET ?? 'public-assets',

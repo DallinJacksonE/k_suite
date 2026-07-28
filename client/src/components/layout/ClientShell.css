@@ -69,6 +69,54 @@
   padding: var(--layout-main-y-start) 0 var(--layout-main-y-end);
 }
 
+.client-shell__footer {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: center;
+  width: min(var(--layout-max-width), calc(100% - var(--layout-gutter)));
+  margin: 0 auto;
+  padding: 0 0 var(--space-9);
+  color: var(--color-muted);
+}
+
+.client-shell__footer p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.client-shell__socials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+}
+
+.client-shell__socials a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--button-secondary-border);
+  border-radius: 999px;
+  color: var(--button-secondary-text);
+  background: var(--button-secondary-bg);
+  transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.client-shell__socials a:hover,
+.client-shell__socials a:focus-visible {
+  color: var(--button-text);
+  background: var(--button-bg);
+  transform: translateY(-2px);
+}
+
+.client-shell__socials svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
+}
+
 .page-card,
 .status-card {
   border: 1px solid var(--border);
@@ -182,6 +230,10 @@
   .client-shell__nav a,
   .client-shell__nav button {
     text-align: center;
+  }
+
+  .client-shell__footer {
+    padding-bottom: var(--space-7);
   }
 
   .route-grid,

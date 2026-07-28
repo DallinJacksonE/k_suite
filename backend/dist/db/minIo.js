@@ -1,5 +1,6 @@
 import { Client } from 'minio';
 import { randomUUID } from 'node:crypto';
+const DEFAULT_PUBLIC_ENDPOINT = 'https://storage.kayliescreations.com';
 export class MinIoBucketService {
     config;
     client;
@@ -7,7 +8,7 @@ export class MinIoBucketService {
     constructor(config) {
         this.config = config;
         this.client = createClient(config, config.endpoint);
-        this.signingClient = createClient(config, config.publicEndpoint ?? 'http://localhost:9000');
+        this.signingClient = createClient(config, config.publicEndpoint ?? DEFAULT_PUBLIC_ENDPOINT);
     }
     async uploadPhoto(category, upload) {
         const key = `photos/${category}/${safeUniqueName(upload.originalName)}`;
@@ -30,14 +31,14 @@ export class MinIoBucketService {
         return { url, expiresAt: new Date(Date.now() + expiresInSeconds * 1000) };
     }
     publicUrl(key) {
-        const endpoint = this.config.publicEndpoint ?? 'http://localhost:9000';
+        const endpoint = this.config.publicEndpoint ?? DEFAULT_PUBLIC_ENDPOINT;
         return `${endpoint.replace(/\/$/, '')}/${this.config.publicBucket}/${key}`;
     }
 }
 export function createMinIoBucketService(env = process.env) {
     return new MinIoBucketService({
         endpoint: env.MINIO_ENDPOINT ?? 'http://bucket:9000',
-        publicEndpoint: env.MINIO_PUBLIC_ENDPOINT ?? 'http://localhost:9000',
+        publicEndpoint: env.MINIO_PUBLIC_ENDPOINT ?? DEFAULT_PUBLIC_ENDPOINT,
         accessKey: env.MINIO_ACCESS_KEY ?? 'k_suite_minio',
         secretKey: env.MINIO_SECRET_KEY ?? 'k_suite_minio_password',
         publicBucket: env.MINIO_PUBLIC_BUCKET ?? 'public-assets',

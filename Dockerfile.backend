@@ -20,7 +20,7 @@ COPY --from=build /workspace/shared/dist ./dist
 
 WORKDIR /workspace/backend
 ENV NODE_ENV=production
-ENV PORT=5000
+ENV PORT=7500
 
 COPY backend/package*.json ./
 RUN npm ci --omit=dev
@@ -28,5 +28,5 @@ RUN npm ci --omit=dev
 COPY --from=build /workspace/backend/dist ./dist
 COPY backend/config.json ./config.json
 
-EXPOSE 5000
+EXPOSE 7500
 CMD ["npm", "start"]

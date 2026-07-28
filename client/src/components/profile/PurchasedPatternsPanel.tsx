@@ -18,7 +18,7 @@ export function PurchasedPatternsPanel({ patterns, onDownload }: Props) {
                 <strong>{pattern.title}</strong>
                 <span>Purchased {formatDate(pattern.purchasedAt)}</span>
               </div>
-              <button type="button" onClick={() => onDownload(pattern.productId)}>Create download link</button>
+              <button type="button" className="profile-action-button profile-download-button" onClick={() => onDownload(pattern.productId)}>Download Pattern</button>
             </li>
           ))}
         </ul>

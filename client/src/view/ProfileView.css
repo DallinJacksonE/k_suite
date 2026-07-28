@@ -47,10 +47,18 @@
 }
 
 .profile-grid {
+  --profile-grid-gap: clamp(var(--space-5), 2.4vw, var(--space-8));
+
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(var(--space-5), 2.4vw, var(--space-8));
+  grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+  gap: var(--profile-grid-gap);
   align-items: start;
+}
+
+.profile-card-stack {
+  display: grid;
+  gap: var(--profile-grid-gap);
+  align-content: start;
 }
 
 .profile-panel {
@@ -119,6 +127,47 @@
 
 .profile-panel button {
   justify-self: start;
+}
+
+.profile-action-button {
+  border: 1px solid var(--button-border);
+  border-radius: var(--button-radius);
+  padding: var(--button-padding);
+  color: var(--button-text);
+  background: var(--button-bg);
+  font-weight: var(--button-font-weight);
+  cursor: pointer;
+}
+
+.profile-action-button:disabled {
+  cursor: not-allowed;
+  opacity: var(--button-disabled-opacity);
+}
+
+.profile-download-button {
+  white-space: nowrap;
+}
+
+.danger-button {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--button-border));
+  color: var(--color-danger);
+  background: var(--danger-bg);
+}
+
+.profile-fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+}
+
+.profile-fieldset legend {
+  padding: 0 var(--space-2);
+  color: var(--color-heading);
+  font-weight: 900;
 }
 
 .profile-list {
@@ -250,6 +299,7 @@
 @media (max-width: 900px) {
   .profile-hero,
   .profile-grid,
+  .profile-fieldset,
   .profile-pattern-list > li,
   .profile-order-heading,
   .profile-order-items li {

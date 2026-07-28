@@ -68,7 +68,7 @@ function UserInlineEditor({ account, busy, onUpdate, onDelete, onRefund }: { acc
       <form className="form-grid two-column" onSubmit={submit}>
         <label>Name<input name="name" defaultValue={account.user.name} /></label>
         <label>New password<input value={password} type="password" placeholder="Leave blank to keep current password" onChange={(event) => setPassword(event.target.value)} /></label>
-        <label className="checkbox-label"><input name="emailNotificationsEnabled" type="checkbox" defaultChecked={account.user.emailNotificationsEnabled !== false} />Email notifications</label>
+        <label className="checkbox-label">Email notifications<input name="emailNotificationsEnabled" type="checkbox" defaultChecked={account.user.emailNotificationsEnabled !== false} /></label>
         <AddressFields address={account.user.addressBook?.shippingAddress} />
         <div className="button-row full-width"><button type="submit" disabled={busy}>Save account</button><button type="button" className="danger-button" onClick={() => window.confirm(`Delete account for ${account.user.email}?`) && onDelete(account.user.email)} disabled={busy}>Delete account</button></div>
       </form>

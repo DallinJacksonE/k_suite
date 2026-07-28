@@ -17,7 +17,7 @@ FROM node:22-alpine AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=4999
+ENV PORT=7081
 
 COPY shared/package*.json /shared/
 COPY --from=build /app/shared/dist /shared/dist
@@ -28,5 +28,5 @@ RUN npm ci --omit=dev
 COPY admin/server.js ./server.js
 COPY --from=build /app/admin/dist ./dist
 
-EXPOSE 4999
+EXPOSE 7081
 CMD ["npm", "start"]

@@ -83,7 +83,7 @@ export function ProductDashboard({ productType, products, busy, onCreate, onUpda
             <form onSubmit={(event) => void submitCreate(event)} className="form-grid two-column">
               <label>Title<input name="title" required /></label>
               <label>Price<input name="price" type="number" min="0.01" step="0.01" required /></label>
-              <label className="checkbox-label"><span>Sale Item<input name="isSaleItem" type="checkbox" /></span></label>
+              <label className="checkbox-label">Sale item<input name="isSaleItem" type="checkbox" /></label>
               <label>Sale price<input name="salePrice" type="number" min="0.01" step="0.01" /></label>
               <label>Tags<input name="tags" placeholder="featured, market" /></label>
               {productType === 'plushie' ? <><label>Inventory count<input name="inventoryCount" type="number" min="0" step="1" /></label><SizePicker sizes={sizes} onChange={setSizes} /></> : null}
@@ -97,12 +97,12 @@ export function ProductDashboard({ productType, products, busy, onCreate, onUpda
                     <ColorVariationRow key={index} variation={variation} canRemove={colorVariations.length > 1} onChange={(patch) => updateColorVariation(index, patch)} onRemove={() => removeColorVariation(index)} onUploadImage={onUploadImage} />
                   ))}
                   <button type="button" onClick={() => setColorVariations((current) => [...current, { name: '' }])}>Add color</button>
-                  <label className="checkbox-label"><input name="readyToShip" type="checkbox" />Ready to ship</label>
+                  <label className="checkbox-label">Ready to ship<input name="readyToShip" type="checkbox" /></label>
                 </div>
               ) : (
                 <><UploadControl label="Pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
               )}
-              <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked />Available</label>
+              <label className="checkbox-label">Available<input name="available" type="checkbox" defaultChecked /></label>
               <div className="button-row full-width"><button type="submit" disabled={busy}>Create {productLabel}</button><button type="button" onClick={resetCreateForm} disabled={busy}>Cancel</button></div>
             </form>
           </div>
@@ -200,13 +200,13 @@ function ProductInlineEditor({ product, busy, onUpdate, onDelete, onUploadImage,
             />
           ))}
           <button type="button" onClick={() => setColorVariations((current) => [...current, { name: '' }])}>Add color</button>
-          <label className="checkbox-label"><input name="readyToShip" type="checkbox" defaultChecked={product.readyToShip} />Ready to ship</label>
+          <label className="checkbox-label">Ready to ship<input name="readyToShip" type="checkbox" defaultChecked={product.readyToShip} /></label>
         </div>
       ) : (
         <><UploadControl label="Replace pattern PDF" accept="application/pdf" onUpload={async (file) => setPdfKey(await onUploadPdf(file))} /><label>PDF key<input value={pdfKey} onChange={(event) => setPdfKey(event.target.value)} required /></label></>
       )}
-      <label className="checkbox-label"><input name="available" type="checkbox" defaultChecked={product.available} />Available</label>
-      <label className="checkbox-label"><input name="isSaleItem" type="checkbox" defaultChecked={product.isSaleItem} />Sale item</label>
+      <label className="checkbox-label">Available<input name="available" type="checkbox" defaultChecked={product.available} /></label>
+      <label className="checkbox-label">Sale item<input name="isSaleItem" type="checkbox" defaultChecked={product.isSaleItem} /></label>
       <div className="button-row full-width">
         <button type="submit" disabled={busy}>Save edits</button>
         <button type="button" className="danger-button" onClick={() => window.confirm('Delete this product listing?') && onDelete(product.id)} disabled={busy}>Delete product</button>
@@ -241,12 +241,12 @@ function SizePicker({ sizes, onChange }: { sizes: ProductSize[]; onChange(sizes:
       <span>
         {productSizeOptions.map((size) => (
           <label key={size} className="checkbox-label">
+            {size}
             <input
               type="checkbox"
               checked={sizes.includes(size)}
               onChange={(event) => onChange(event.target.checked ? [...sizes, size] : sizes.filter((current) => current !== size))}
             />
-            {size}
           </label>
         ))}
       </span>

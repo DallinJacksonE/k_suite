@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 function resolveBackendUrl(mode: string): string {
   const env = loadEnv(mode, process.cwd(), '')
-  return env.VITE_BACKEND_URL || env.BACKEND_URL || 'http://localhost:5000'
+  return env.VITE_BACKEND_URL || env.BACKEND_URL || 'http://localhost:7500'
 }
 
 // https://vite.dev/config/
