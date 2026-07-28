@@ -50,4 +50,41 @@
   color: var(--color-heading);
 }
 
+.home-about {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem);
+  align-items: center;
+  gap: var(--space-10);
+}
+
+.home-about__copy {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.home-about__copy h2,
+.home-about__copy p {
+  margin: 0;
+}
+
+.home-about__image {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-card);
+  object-fit: cover;
+  background: var(--media-bg);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 760px) {
+  .home-about {
+    grid-template-columns: 1fr;
+  }
+
+  .home-about__image {
+    max-width: 20rem;
+    justify-self: center;
+  }
+}
+
 

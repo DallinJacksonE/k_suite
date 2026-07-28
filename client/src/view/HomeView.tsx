@@ -14,6 +14,7 @@ const patternExploreImage = '/images/rustyfox.jpg'
 const plushieExploreImage = '/images/poohbear.JPG'
 const blogExploreImage = '/images/chick.JPG'
 const blanketBanner = '/images/bannerforwebsite.png'
+const profileImage = '/images/profilepic.png'
 
 interface ExploreLink {
   imageUrl: string
@@ -72,9 +73,12 @@ export function HomeView() {
         )}
       </section>
 
-      <section className='page-card' aria-labelledby='aboutme'>
-        <p>I'm Kaylie.</p>
-        <p>Welcome to my creative corner! I am so gald you are here. I started crocheting when I was 9 years old, started selling my plushies at 13, and started selling patterns at 18. I love all things crafty and creative. Checkout my patterns, ready to go plushies, my blog, and free tutorials!</p>
+      <section className="page-card home-about" aria-labelledby="aboutme">
+        <div className="home-about__copy">
+          <h2 id="aboutme">I'm Kaylie.</h2>
+          <p>Welcome to my creative corner! I am so gald you are here. I started crocheting when I was 9 years old, started selling my plushies at 13, and started selling patterns at 18. I love all things crafty and creative. Checkout my patterns, ready to go plushies, my blog, and free tutorials!</p>
+        </div>
+        <img className="home-about__image" src={profileImage} alt="Kaylie smiling with a handmade crochet plushie" />
       </section>
     </ClientShell>
   )
