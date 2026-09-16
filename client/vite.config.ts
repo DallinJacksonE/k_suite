@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: backendUrl,
+          target: 'http://192.168.68.76:7500',
           changeOrigin: true,
           secure: false,
         },

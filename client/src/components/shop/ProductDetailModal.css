@@ -117,7 +117,7 @@
 .productDetailCarouselStage > img {
   display: block;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
   object-fit: cover;
 }
 

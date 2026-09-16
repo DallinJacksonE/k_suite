@@ -23,13 +23,16 @@
 
 .product-card img {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
   border-radius: var(--radius-lg);
   object-fit: cover;
   background: var(--media-bg);
 }
 
-.product-card h2,
+.product-card h2 {
+  margin: 0;
+  font-weight: bold;
+}
 .product-card p {
   margin: 0;
 }

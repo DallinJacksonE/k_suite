@@ -40,6 +40,8 @@ export function ProductDetailModal({ product, session, onClose, onAddToCart }: P
     <div className="productDetailModal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title" onClick={onClose}>
       <div className="productDetailModalPanel" onClick={(event) => event.stopPropagation()}>
         <button type="button" className="productDetailModalClose" onClick={onClose} aria-label="Close product details">×</button>
+        <h2 id="product-detail-title">{product.title}</h2>
+
         <figure className="productDetailCarousel" aria-label={`${product.title} images`}>
           <div className="productDetailCarouselStage">
             <img src={activeImage.url} alt={activeImage.label} />
@@ -68,7 +70,6 @@ export function ProductDetailModal({ product, session, onClose, onAddToCart }: P
             </div>
           ) : null}
         </figure>
-        <h2 id="product-detail-title">{product.title}</h2>
         <p>{product.description}</p>
         {product.type === 'plushie' ? (
           <label>Color
